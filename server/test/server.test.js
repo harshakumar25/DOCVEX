@@ -21,12 +21,13 @@ test('validateTeachInput validation rules', () => {
   assert.equal(validateTeachInput({ text: 'Valid', provider: 'groq' }).valid, true);
 });
 
-test('GET /health returns 200 with service details', async () => {
+test('GET /health returns 200 without wildcard CORS header for direct/extension clients', async () => {
   const { baseUrl, close } = await startTestServer();
   try {
     const res = await fetch(`${baseUrl}/health`);
     assert.equal(res.status, 200);
-    assert.equal(res.headers.get('access-control-allow-origin'), '*');
+    // Wildcard CORS must be null (not present)
+    assert.equal(res.headers.get('access-control-allow-origin'), null);
 
     const body = await res.json();
     assert.equal(body.status, 'ok');
@@ -34,18 +35,49 @@ test('GET /health returns 200 with service details', async () => {
     assert.ok(typeof body.ollama === 'object');
     assert.ok(typeof body.ollama.running === 'boolean');
     assert.ok(typeof body.groq === 'object');
+    assert.equal(body.groq.model, 'openai/gpt-oss-20b');
   } finally {
     await close();
   }
 });
 
-test('OPTIONS /teach returns 204 with CORS headers', async () => {
+test('server blocks cross-origin requests from web pages with 403', async () => {
   const { baseUrl, close } = await startTestServer();
   try {
-    const res = await fetch(`${baseUrl}/teach`, { method: 'OPTIONS' });
+    const res = await fetch(`${baseUrl}/health`, {
+      headers: { Origin: 'https://evil-website.com' },
+    });
+    assert.equal(res.status, 403);
+    const body = await res.json();
+    assert.ok(body.error.includes('Cross-origin requests from web pages are forbidden'));
+  } finally {
+    await close();
+  }
+});
+
+test('OPTIONS preflight from web pages is rejected with 403', async () => {
+  const { baseUrl, close } = await startTestServer();
+  try {
+    const res = await fetch(`${baseUrl}/teach`, {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://evil-website.com' },
+    });
+    assert.equal(res.status, 403);
+  } finally {
+    await close();
+  }
+});
+
+test('OPTIONS preflight from chrome-extension origin returns 204 with matching origin', async () => {
+  const { baseUrl, close } = await startTestServer();
+  try {
+    const extOrigin = 'chrome-extension://abcdefghijklmnop';
+    const res = await fetch(`${baseUrl}/teach`, {
+      method: 'OPTIONS',
+      headers: { Origin: extOrigin },
+    });
     assert.equal(res.status, 204);
-    assert.equal(res.headers.get('access-control-allow-origin'), '*');
-    assert.ok(res.headers.get('access-control-allow-methods').includes('POST'));
+    assert.equal(res.headers.get('access-control-allow-origin'), extOrigin);
   } finally {
     await close();
   }

@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { config, helpers } from '../config.js';
 
 test('config has valid default values', () => {
+  assert.equal(config.HOST, '127.0.0.1');
   assert.equal(typeof config.PORT, 'number');
   assert.ok(config.PORT >= 1 && config.PORT <= 65535);
   assert.equal(typeof config.OLLAMA_HOST, 'string');
   assert.ok(config.OLLAMA_HOST.startsWith('http'));
   assert.equal(typeof config.OLLAMA_MODEL, 'string');
   assert.ok(config.OLLAMA_MODEL.length > 0);
-  assert.equal(typeof config.GROQ_MODEL, 'string');
+  assert.equal(config.GROQ_MODEL, 'openai/gpt-oss-20b');
   assert.ok(['ollama', 'groq'].includes(config.DEFAULT_PROVIDER));
   assert.ok(config.MAX_SELECTION_LENGTH > 0);
 });

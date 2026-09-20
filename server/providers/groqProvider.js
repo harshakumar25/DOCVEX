@@ -4,7 +4,7 @@ export const callGroq = async ({
   prompt,
   systemPrompt = TEACHER_SYSTEM_PROMPT,
   apiKey,
-  model = 'llama-3.1-8b-instant',
+  model = 'openai/gpt-oss-20b',
   timeoutMs = 30000,
 }) => {
   if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {

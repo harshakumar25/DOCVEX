@@ -221,7 +221,17 @@
     }
   }
 
-  // Render HUD content
+  // Helper to validate that a URL uses safe protocols (http: or https:)
+  function isSafeUrl(urlString) {
+    try {
+      const parsed = new URL(urlString);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
+
+  // Render HUD content safely using strict DOM construction (Zero innerHTML on dynamic/model text)
   function renderHUD({ status, statusType = 'info', explanation = '', sources = [], error = null }) {
     const { shadowRoot } = getOrCreateHUD();
 
@@ -230,81 +240,127 @@
       existingCard = document.createElement('div');
       existingCard.className = 'hud-card';
       shadowRoot.appendChild(existingCard);
+    } else {
+      existingCard.replaceChildren();
     }
 
-    let sourcesHtml = '';
-    if (sources && sources.length > 0) {
-      sourcesHtml = `
-        <div class="sources-list">
-          <strong>Verified Sources:</strong><br>
-          ${sources
-            .map(
-              (s) =>
-                `<a class="source-link" href="${s.url || '#'}" target="_blank" rel="noopener noreferrer">${
-                  s.domain || s.title || 'Official Source'
-                }</a>`
-            )
-            .join('')}
-        </div>
-      `;
+    // 1. Header
+    const header = document.createElement('div');
+    header.className = 'hud-header';
+
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'hud-title';
+
+    const titleIcon = document.createElement('span');
+    titleIcon.textContent = '🎓 DocVex';
+
+    const titleBadge = document.createElement('span');
+    titleBadge.className = 'hud-badge';
+    titleBadge.textContent = 'Local Tutor';
+
+    titleDiv.appendChild(titleIcon);
+    titleDiv.appendChild(titleBadge);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.id = 'docvex-btn-close';
+    closeBtn.className = 'hud-close';
+    closeBtn.title = 'Close';
+    closeBtn.textContent = '✕';
+    closeBtn.onclick = closeHUD;
+
+    header.appendChild(titleDiv);
+    header.appendChild(closeBtn);
+    existingCard.appendChild(header);
+
+    // 2. Status Row
+    const statusRow = document.createElement('div');
+    statusRow.className = 'hud-status';
+
+    const pulseSpan = document.createElement('span');
+    pulseSpan.className = 'status-pulse';
+
+    const statusTextSpan = document.createElement('span');
+    statusTextSpan.textContent = status || '';
+
+    statusRow.appendChild(pulseSpan);
+    statusRow.appendChild(statusTextSpan);
+    existingCard.appendChild(statusRow);
+
+    // 3. Error Message (if any)
+    if (error) {
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'error-msg';
+      errorDiv.textContent = error;
+      existingCard.appendChild(errorDiv);
     }
 
-    let errorHtml = error ? `<div class="error-msg">${error}</div>` : '';
-
-    let controlsHtml = '';
+    // 4. Explanation Content (Strict textContent / untrusted text)
     if (explanation) {
-      controlsHtml = `
-        <div class="hud-controls">
-          <button id="docvex-btn-play" class="btn btn-primary">${isSpeaking && !isPaused ? '⏸ Pause' : '▶ Play'}</button>
-          <button id="docvex-btn-stop" class="btn btn-danger">⏹ Stop</button>
-        </div>
-      `;
-    }
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'hud-content';
+      contentDiv.textContent = explanation;
+      existingCard.appendChild(contentDiv);
 
-    existingCard.innerHTML = `
-      <div class="hud-header">
-        <div class="hud-title">
-          <span>🎓 DocVex</span>
-          <span class="hud-badge">Local Tutor</span>
-        </div>
-        <button id="docvex-btn-close" class="hud-close" title="Close">✕</button>
-      </div>
-      <div class="hud-status">
-        <span class="status-pulse"></span>
-        <span>${status}</span>
-      </div>
-      ${errorHtml}
-      ${explanation ? `<div class="hud-content">${explanation}</div>` : ''}
-      ${controlsHtml}
-      ${sourcesHtml}
-    `;
+      // 5. Audio Controls
+      const controlsDiv = document.createElement('div');
+      controlsDiv.className = 'hud-controls';
 
-    // Bind event listeners
-    const closeBtn = existingCard.querySelector('#docvex-btn-close');
-    if (closeBtn) closeBtn.onclick = closeHUD;
-
-    const playBtn = existingCard.querySelector('#docvex-btn-play');
-    if (playBtn) {
+      const playBtn = document.createElement('button');
+      playBtn.id = 'docvex-btn-play';
+      playBtn.className = 'btn btn-primary';
+      playBtn.textContent = isSpeaking && !isPaused ? '⏸ Pause' : '▶ Play';
       playBtn.onclick = () => {
         if (isSpeaking && !isPaused) {
           pauseSpeech();
-          playBtn.innerText = '▶ Resume';
+          playBtn.textContent = '▶ Resume';
         } else if (isPaused) {
           resumeSpeech();
-          playBtn.innerText = '⏸ Pause';
+          playBtn.textContent = '⏸ Pause';
         } else {
           startSpeech(currentSpeechText);
-          playBtn.innerText = '⏸ Pause';
+          playBtn.textContent = '⏸ Pause';
         }
       };
-    }
 
-    const stopBtn = existingCard.querySelector('#docvex-btn-stop');
-    if (stopBtn) {
+      const stopBtn = document.createElement('button');
+      stopBtn.id = 'docvex-btn-stop';
+      stopBtn.className = 'btn btn-danger';
+      stopBtn.textContent = '⏹ Stop';
       stopBtn.onclick = () => {
         stopSpeech();
-        if (playBtn) playBtn.innerText = '▶ Play';
+        playBtn.textContent = '▶ Play';
       };
+
+      controlsDiv.appendChild(playBtn);
+      controlsDiv.appendChild(stopBtn);
+      existingCard.appendChild(controlsDiv);
+    }
+
+    // 6. Verified Sources
+    if (Array.isArray(sources) && sources.length > 0) {
+      const sourcesDiv = document.createElement('div');
+      sourcesDiv.className = 'sources-list';
+
+      const sourcesHeader = document.createElement('strong');
+      sourcesHeader.textContent = 'Verified Sources:';
+      sourcesDiv.appendChild(sourcesHeader);
+      sourcesDiv.appendChild(document.createElement('br'));
+
+      sources.forEach((s) => {
+        const link = document.createElement('a');
+        link.className = 'source-link';
+        link.textContent = s.domain || s.title || 'Official Source';
+        if (s.url && isSafeUrl(s.url)) {
+          link.href = s.url;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+        } else {
+          link.href = '#';
+        }
+        sourcesDiv.appendChild(link);
+      });
+
+      existingCard.appendChild(sourcesDiv);
     }
   }
 

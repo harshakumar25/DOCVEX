@@ -27,11 +27,12 @@ const parseProvider = (value, fallback = 'ollama') => {
 };
 
 export const config = Object.freeze({
+  HOST: (process.env.HOST || '127.0.0.1').trim(),
   PORT: parsePort(process.env.PORT, 3000),
   OLLAMA_HOST: (process.env.OLLAMA_HOST || 'http://127.0.0.1:11434').replace(/\/+$/, ''),
   OLLAMA_MODEL: process.env.OLLAMA_MODEL || 'qwen3:4b',
   GROQ_API_KEY: process.env.GROQ_API_KEY || '',
-  GROQ_MODEL: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
+  GROQ_MODEL: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
   DEFAULT_PROVIDER: parseProvider(process.env.DEFAULT_PROVIDER, 'ollama'),
   MAX_SELECTION_LENGTH: parsePositiveInteger(process.env.MAX_SELECTION_LENGTH, 12000),
 });

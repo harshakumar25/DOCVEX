@@ -3,15 +3,25 @@ import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { teachPipeline } from './pipeline.js';
 
-// CORS and common headers
-const setCorsHeaders = (res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+// Origin security: Only allow requests from chrome-extension:// origins or non-browser clients (service worker, curl)
+const applyOriginSecurity = (req, res) => {
+  const origin = req.headers.origin;
+  if (!origin) {
+    return true;
+  }
+  if (origin.startsWith('chrome-extension://')) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    return true;
+  }
+  return false;
 };
 
-const sendJson = (res, statusCode, data) => {
-  setCorsHeaders(res);
+const sendJson = (res, statusCode, data, req = null) => {
+  if (req) {
+    applyOriginSecurity(req, res);
+  }
   res.writeHead(statusCode, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
 };
@@ -124,12 +134,22 @@ export const createServer = (options = {}) => {
   const serverConfig = { ...config, ...options };
 
   return http.createServer(async (req, res) => {
+    const isOriginAllowed = applyOriginSecurity(req, res);
+
     // Handle CORS preflight
     if (req.method === 'OPTIONS') {
-      setCorsHeaders(res);
+      if (!isOriginAllowed) {
+        res.writeHead(403);
+        res.end();
+        return;
+      }
       res.writeHead(204);
       res.end();
       return;
+    }
+
+    if (!isOriginAllowed) {
+      return sendJson(res, 403, { error: 'Cross-origin requests from web pages are forbidden.' }, req);
     }
 
     const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -147,7 +167,7 @@ export const createServer = (options = {}) => {
           model: serverConfig.GROQ_MODEL,
         },
         defaultProvider: serverConfig.DEFAULT_PROVIDER,
-      });
+      }, req);
     }
 
     // Teach Endpoint
@@ -156,33 +176,33 @@ export const createServer = (options = {}) => {
       try {
         body = await parseJsonBody(req);
       } catch (err) {
-        return sendJson(res, 400, { error: err.message });
+        return sendJson(res, 400, { error: err.message }, req);
       }
 
       const validation = validateTeachInput(body, serverConfig.MAX_SELECTION_LENGTH);
       if (!validation.valid) {
-        return sendJson(res, 400, { error: validation.error });
+        return sendJson(res, 400, { error: validation.error }, req);
       }
 
       const handler = serverConfig.teachHandler || teachPipeline;
       try {
         const result = await handler(validation.data, serverConfig);
-        return sendJson(res, 200, result);
+        return sendJson(res, 200, result, req);
       } catch (err) {
         const statusCode = err.statusCode || 500;
-        return sendJson(res, statusCode, { error: err.message || 'Internal teaching error' });
+        return sendJson(res, statusCode, { error: err.message || 'Internal teaching error' }, req);
       }
     }
 
     // 404 for unknown endpoints
-    return sendJson(res, 404, { error: 'Not found' });
+    return sendJson(res, 404, { error: 'Not found' }, req);
   });
 };
 
 // Start the server directly if executed as main
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const server = createServer();
-  server.listen(config.PORT, () => {
-    console.log(`DocVex server listening on http://127.0.0.1:${config.PORT}`);
+  server.listen(config.PORT, config.HOST, () => {
+    console.log(`DocVex server listening on http://${config.HOST}:${config.PORT}`);
   });
 }

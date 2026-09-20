@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server/server.js",
     "test": "node --test server/test/*.test.js",
-    "lint": "node --check server/**/*.js"
+    "lint": "node --check server/**/*.js extension/*.js"
   },
   "keywords": [
     "local-first",
