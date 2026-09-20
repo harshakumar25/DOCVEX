@@ -23,7 +23,10 @@ const parsePort = (value, fallback = 3000) => {
 
 const parseProvider = (value, fallback = 'ollama') => {
   const normalized = (value || '').toLowerCase().trim();
-  return normalized === 'groq' ? 'groq' : 'ollama';
+  if (normalized === 'groq') return 'groq';
+  if (normalized === 'hybrid') return 'hybrid';
+  if (normalized === 'ollama') return 'ollama';
+  return fallback;
 };
 
 export const config = Object.freeze({

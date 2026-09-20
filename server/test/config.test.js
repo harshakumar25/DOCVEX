@@ -11,7 +11,7 @@ test('config has valid default values', () => {
   assert.equal(typeof config.OLLAMA_MODEL, 'string');
   assert.ok(config.OLLAMA_MODEL.length > 0);
   assert.equal(config.GROQ_MODEL, 'openai/gpt-oss-20b');
-  assert.ok(['ollama', 'groq'].includes(config.DEFAULT_PROVIDER));
+  assert.ok(['ollama', 'groq', 'hybrid'].includes(config.DEFAULT_PROVIDER));
   assert.ok(config.MAX_SELECTION_LENGTH > 0);
 });
 
@@ -32,6 +32,8 @@ test('helpers.parsePositiveInteger validates positive integers', () => {
 test('helpers.parseProvider validates supported providers', () => {
   assert.equal(helpers.parseProvider('groq'), 'groq');
   assert.equal(helpers.parseProvider('GROQ'), 'groq');
+  assert.equal(helpers.parseProvider('hybrid'), 'hybrid');
+  assert.equal(helpers.parseProvider('HYBRID'), 'hybrid');
   assert.equal(helpers.parseProvider('ollama'), 'ollama');
   assert.equal(helpers.parseProvider('unknown', 'ollama'), 'ollama');
 });

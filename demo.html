@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DocVex — Interactive Test Bench</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #131b2e;
+      --card-border: #1e293b;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --accent: #10b981;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      background: rgba(99, 102, 241, 0.15);
+      color: #a5b4fc;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+    }
+    .instructions-card {
+      background: linear-gradient(135deg, #1e1b4b 0%, #172554 100%);
+      border: 1px solid #3730a3;
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .step-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 8px;
+    }
+    .step-item {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .step-num {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      line-height: 24px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      text-align: center;
+      font-weight: 700;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .step-title {
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+    .step-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    kbd {
+      background: #312e81;
+      color: #ffffff;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 12px;
+      border: 1px solid #4338ca;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .card:hover {
+      border-color: #334155;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #e2e8f0;
+    }
+    .select-btn {
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      color: #c7d2fe;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .select-btn:hover {
+      background: var(--primary);
+      color: #ffffff;
+    }
+    .btn-speak {
+      background: var(--primary) !important;
+      color: #ffffff !important;
+      font-weight: 700 !important;
+      box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
+    }
+    .btn-speak:hover {
+      background: var(--primary-hover) !important;
+      transform: translateY(-1px);
+    }
+    .passage {
+      background: #0a0e17;
+      border-left: 3px solid var(--primary);
+      padding: 16px 20px;
+      border-radius: 0 8px 8px 0;
+      color: #cbd5e1;
+      font-size: 14.5px;
+      line-height: 1.7;
+      user-select: text;
+    }
+    .custom-section {
+      margin-top: 32px;
+    }
+    .custom-textarea {
+      width: 100%;
+      height: 100px;
+      background: #0a0e17;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      color: #f8fafc;
+      padding: 12px;
+      font-family: inherit;
+      font-size: 14px;
+      resize: vertical;
+      outline: none;
+      margin-top: 10px;
+    }
+    .custom-textarea:focus {
+      border-color: var(--primary);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="badge">🚀 DocVex Active Test Bench</div>
+      <h1>Select Text. Listen Out Loud.</h1>
+      <p class="subtitle">Test real-time streaming speech synthesis and technical explanations directly in Brave.</p>
+    </header>
+
+    <div class="instructions-card">
+      <div style="font-weight: 700; font-size: 16px;">Quick Test Workflow:</div>
+      <div class="step-list">
+        <div class="step-item">
+          <div class="step-num">1</div>
+          <div class="step-title">Load Extension</div>
+          <div class="step-desc">Load the <code style="color:#a5b4fc;">DOCVEX/extension</code> folder via <code style="color:#a5b4fc;">brave://extensions</code>.</div>
+        </div>
+        <div class="step-item">
+          <div class="step-num">2</div>
+          <div class="step-title">Select Any Passage</div>
+          <div class="step-desc">Highlight any text below, or click the "Highlight Passage" button.</div>
+        </div>
+        <div class="step-item">
+          <div class="step-num">3</div>
+          <div class="step-title">Press Shortcut</div>
+          <div class="step-desc">Press <kbd>Control + Shift + S</kbd> or right click &gt; "🎓 Teach me this".</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Passage 1 -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">1. Transformer Architecture — Scaled Dot-Product Attention</div>
+        <div style="display:flex; gap:8px;">
+          <button class="select-btn btn-speak" onclick="speakElement('p1')">🎓 Teach Me This</button>
+          <button class="select-btn" onclick="highlightElement('p1')">Highlight Only</button>
+        </div>
+      </div>
+      <p id="p1" class="passage">
+        An attention function can be described as mapping a query and a set of key-value pairs to an output, where the query, keys, values, and output are all vectors. The output is computed as a weighted sum of the values, where the weight assigned to each value is computed by a compatibility function of the query with the corresponding key. We compute the matrix of outputs as Softmax of (Q multiplied by K transpose divided by the square root of d_k) multiplied by V.
+      </p>
+    </div>
+
+    <!-- Passage 2 -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">2. Node.js Architecture — The Event Loop & Microtasks</div>
+        <div style="display:flex; gap:8px;">
+          <button class="select-btn btn-speak" onclick="speakElement('p2')">🎓 Teach Me This</button>
+          <button class="select-btn" onclick="highlightElement('p2')">Highlight Only</button>
+        </div>
+      </div>
+      <p id="p2" class="passage">
+        The Node.js event loop operates across distinct phases: timers, pending callbacks, idle/prepare, poll, check, and close callbacks. Crucially, the microtask queue—which processes Promise resolutions and process.nextTick callbacks—runs to exhaustion immediately after the currently running operation completes, regardless of the current event loop phase, which can cause event loop starvation if recursive microtasks are scheduled.
+      </p>
+    </div>
+
+    <!-- Passage 3 -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">3. Distributed Systems — RAFT Leader Election</div>
+        <div style="display:flex; gap:8px;">
+          <button class="select-btn btn-speak" onclick="speakElement('p3')">🎓 Teach Me This</button>
+          <button class="select-btn" onclick="highlightElement('p3')">Highlight Only</button>
+        </div>
+      </div>
+      <p id="p3" class="passage">
+        Raft achieves consensus through a strong leader paradigm. Servers begin as followers; if election timeouts expire without receiving heartbeats from a leader, a follower transitions to a candidate, increments its current term, and broadcasts RequestVote RPCs. A candidate wins the election when it receives votes from a strict majority of servers in the cluster for that term, ensuring at most one leader can be elected per term.
+      </p>
+    </div>
+
+    <!-- Custom Text Area -->
+    <div class="card custom-section">
+      <div class="card-header">
+        <div class="card-title">Custom Technical Snippet</div>
+        <div style="display:flex; gap:8px;">
+          <button class="select-btn btn-speak" onclick="speakElement('custom-input')">🎓 Teach Me This</button>
+          <button class="select-btn" onclick="highlightElement('custom-input')">Highlight Only</button>
+        </div>
+      </div>
+      <textarea id="custom-input" class="custom-textarea" placeholder="Paste any difficult technical paragraph here to test selection...">Zero-copy deserialization enables high-throughput data processing by referencing byte buffers directly in memory rather than allocating separate heap structures and parsing fields into native language representations.</textarea>
+    </div>
+  </div>
+
+  <script>
+    function highlightElement(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      
+      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+        el.focus();
+        el.select();
+      } else {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    }
+
+    function speakElement(id) {
+      highlightElement(id);
+      const el = document.getElementById(id);
+      const text = el ? (el.value || el.innerText || el.textContent || '').trim() : '';
+      window.postMessage({ type: 'DOCVEX_TRIGGER_TEACH', text }, '*');
+    }
+  </script>
+</body>
+</html>

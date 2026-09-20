@@ -1,4 +1,7 @@
 import { DEFAULT_TRUSTED_DOMAINS, isTrustedDomain } from './trustedSources.js';
+import { decideRetrievalPath, safeHostname } from './retrievalIntelligence.js';
+
+export { decideRetrievalPath, safeHostname };
 
 const STOP_WORDS = new Set([
   'a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are', 'aren',
@@ -74,47 +77,55 @@ export const shouldRetrieveReferences = (text) => {
 };
 
 /**
- * Searches and fetches authoritative references matching the allowlist.
- * If external network fails or no match is found, returns an empty array gracefully.
+ * Searches and fetches authoritative references using pre-fetch retrieval triage.
+ * - 'fast': Zero network calls; leverages current allowlisted page content.
+ * - 'research': Scoped allowlist search with a strict 2.5s timeout.
+ * - 'none': Immediate empty return with zero latency.
  */
 export const retrieveVerifiedReferences = async ({
   text,
   title = '',
   url = '',
+  pageContext = '',
   allowlist = DEFAULT_TRUSTED_DOMAINS,
   maxSources = 3,
-  timeoutMs = 5000,
+  timeoutMs = 2500,
 }) => {
-  if (!shouldRetrieveReferences(text)) {
+  const decision = decideRetrievalPath({
+    currentPageUrl: url,
+    allowlist,
+    selectedText: text,
+  });
+
+  if (decision.path === 'none') {
     return [];
   }
 
-  const results = [];
+  if (decision.path === 'fast') {
+    const domain = safeHostname(url);
+    const content = pageContext && pageContext.trim()
+      ? sanitizeHtmlToText(pageContext, 1500)
+      : `Official documentation context from ${title || domain} (${url})`;
 
-  // If the user's current webpage is already on the trusted allowlist, preserve it as verified context
-  if (url && isTrustedDomain(url, allowlist)) {
-    try {
-      const parsedUrl = new URL(url);
-      results.push({
+    return [
+      {
         url,
-        domain: parsedUrl.hostname,
-        title: title || 'Current Authoritative Page',
-        content: `Context from authoritative page: ${title || parsedUrl.hostname}`,
+        domain: domain || 'official-doc',
+        title: title || domain || 'Current Authoritative Page',
+        content,
         retrievedAt: new Date().toISOString(),
-      });
-    } catch {
-      // Ignore URL parse error
-    }
+      },
+    ];
   }
 
-  // Generate a focused query
+  // decision.path === 'research'
+  const results = [];
   const query = extractSearchQuery(text, title);
 
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    // Search DuckDuckGo HTML endpoint without requiring paid API keys
     const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
     const searchRes = await fetch(searchUrl, {
       headers: {
@@ -126,12 +137,10 @@ export const retrieveVerifiedReferences = async ({
     clearTimeout(timeoutId);
 
     if (!searchRes.ok) {
-      return results.slice(0, maxSources);
+      return [];
     }
 
     const html = await searchRes.text();
-
-    // Extract links and filter against trusted domain allowlist
     const linkRegex = /<a\s+(?:[^>]*?\s+)?href="([^"]*uddg=([^"&]+)[^"]*|https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
     let match;
 
@@ -142,7 +151,6 @@ export const retrieveVerifiedReferences = async ({
       if (rawHref && isTrustedDomain(rawHref, allowlist)) {
         try {
           const parsed = new URL(rawHref);
-          // Avoid duplicate URLs
           if (!results.some((r) => r.url === rawHref)) {
             results.push({
               url: rawHref,
@@ -158,7 +166,7 @@ export const retrieveVerifiedReferences = async ({
       }
     }
   } catch {
-    // Network retrieval failure gracefully falls back to local knowledge
+    // Graceful fallback on network failure or timeout
   }
 
   return results.slice(0, maxSources);

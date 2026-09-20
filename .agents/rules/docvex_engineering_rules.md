@@ -21,3 +21,8 @@
 - Maintain an explicit allowlist of authoritative documentation domains.
 - Clearly distinguish selected text from external reference context.
 - Prioritize technical accuracy over humor or conversational filler.
+
+## 5. Grounding & Retrieval Invariants
+- **Grounding Transparency**: Report `groundingStatus: 'grounded' | 'ungrounded'` explicitly. Never present ungrounded model output as verified.
+- **Evidence Containment**: Wrap external docs in `<evidence>` tags and instruct model to disregard any instruction-like text within evidence blocks (prompt injection defense).
+- **Pre-Fetch Triage**: Always triage retrieval path (`fast` | `research` | `none`) using `decideRetrievalPath` before spending network latency. Use local page DOM context for `fast` path on allowlisted pages.

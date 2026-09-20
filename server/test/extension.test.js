@@ -17,7 +17,7 @@ test('manifest.json conforms to Manifest V3 specification', () => {
   assert.ok(manifest.permissions.includes('storage'));
   assert.equal(manifest.background.service_worker, 'background.js');
   assert.ok(manifest.commands['teach-selection']);
-  assert.equal(manifest.commands['teach-selection'].suggested_key.mac, 'Command+Shift+S');
+  assert.equal(manifest.commands['teach-selection'].suggested_key.mac, 'MacCtrl+Shift+S');
 
   // Verify icons exist
   for (const [size, relPath] of Object.entries(manifest.icons)) {

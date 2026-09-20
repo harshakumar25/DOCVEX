@@ -1,7 +1,9 @@
 import http from 'node:http';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
-import { teachPipeline } from './pipeline.js';
+import { teachPipeline, streamTeachPipeline } from './pipeline.js';
 
 // Origin security: Only allow requests from chrome-extension:// origins or non-browser clients (service worker, curl)
 const applyOriginSecurity = (req, res) => {
@@ -93,9 +95,9 @@ export const validateTeachInput = (body, maxLength = config.MAX_SELECTION_LENGTH
     return { valid: false, error: 'Request body must be a JSON object.' };
   }
 
-  const { text, url, title, provider } = body;
+  const { text, url, title, provider, pageContext } = body;
 
-  if (typeof text !== 'string' || text.trim().length === 0) {
+  if (!text || typeof text !== 'string' || text.trim().length === 0) {
     return { valid: false, error: 'Select some text first.' };
   }
 
@@ -115,8 +117,12 @@ export const validateTeachInput = (body, maxLength = config.MAX_SELECTION_LENGTH
     return { valid: false, error: 'Title must be a string if provided.' };
   }
 
-  if (provider !== undefined && !['ollama', 'groq'].includes(provider)) {
-    return { valid: false, error: "Provider must be 'ollama' or 'groq'." };
+  if (pageContext !== undefined && typeof pageContext !== 'string') {
+    return { valid: false, error: 'pageContext must be a string if provided.' };
+  }
+
+  if (provider !== undefined && !['ollama', 'groq', 'hybrid'].includes(provider)) {
+    return { valid: false, error: "Provider must be 'ollama', 'groq', or 'hybrid'." };
   }
 
   return {
@@ -125,6 +131,7 @@ export const validateTeachInput = (body, maxLength = config.MAX_SELECTION_LENGTH
       text: trimmedText,
       url: url?.trim() || '',
       title: title?.trim() || '',
+      pageContext: pageContext?.trim() || '',
       provider: provider || config.DEFAULT_PROVIDER,
     },
   };
@@ -132,6 +139,7 @@ export const validateTeachInput = (body, maxLength = config.MAX_SELECTION_LENGTH
 
 export const createServer = (options = {}) => {
   const serverConfig = { ...config, ...options };
+  let activeUpstreamController = null;
 
   return http.createServer(async (req, res) => {
     const isOriginAllowed = applyOriginSecurity(req, res);
@@ -170,6 +178,19 @@ export const createServer = (options = {}) => {
       }, req);
     }
 
+    // Interactive Demo Test Bench Endpoint
+    if (req.method === 'GET' && (pathname === '/demo' || pathname === '/')) {
+      try {
+        const demoPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../demo.html');
+        const html = readFileSync(demoPath, 'utf8');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(html);
+        return;
+      } catch {
+        return sendJson(res, 404, { error: 'Demo page not found.' }, req);
+      }
+    }
+
     // Teach Endpoint
     if (req.method === 'POST' && pathname === '/teach') {
       let body;
@@ -184,12 +205,102 @@ export const createServer = (options = {}) => {
         return sendJson(res, 400, { error: validation.error }, req);
       }
 
+      // Server-side supersession: abort any ongoing upstream model inference immediately
+      if (activeUpstreamController) {
+        activeUpstreamController.abort(new Error('SUPERSEDED: A newer teaching request arrived.'));
+        activeUpstreamController = null;
+      }
+
+      const currentController = new AbortController();
+      activeUpstreamController = currentController;
+
+      const clearActiveController = () => {
+        if (activeUpstreamController === currentController) {
+          activeUpstreamController = null;
+        }
+      };
+
+      const isStream = Boolean(body.stream === true || parsedUrl.searchParams.get('stream') === 'true');
+      const requestId = body.requestId || `req_${Date.now()}`;
+
+      if (isStream) {
+        req.on('close', () => {
+          currentController.abort();
+          clearActiveController();
+        });
+
+        currentController.signal.addEventListener('abort', () => {
+          if (!res.writableEnded) {
+            sendEvent('error', {
+              error: currentController.signal.reason?.message || 'Request aborted or superseded',
+              statusCode: 499,
+              requestId,
+            });
+            res.end();
+          }
+        });
+
+        if (req.headers.origin && req.headers.origin.startsWith('chrome-extension://')) {
+          res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+        }
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        });
+
+        const sendEvent = (event, data) => {
+          if (!res.writableEnded) {
+            res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+          }
+        };
+
+        const streamHandler = serverConfig.streamTeachHandler || streamTeachPipeline;
+        try {
+          await streamHandler(
+            { ...validation.data, requestId },
+            {
+              onMetadata: (data) => sendEvent('metadata', data),
+              onToken: (token) => sendEvent('token', { token, requestId }),
+              onSpeechReady: (data) => sendEvent('speech_done', { ...data, requestId }),
+              onInsights: (data) => sendEvent('local_insights', { ...data, requestId }),
+              onDone: (data) => {
+                clearActiveController();
+                sendEvent('done', data);
+                res.end();
+              },
+              onError: (err) => {
+                clearActiveController();
+                sendEvent('error', { error: err.message, statusCode: err.statusCode || 500, requestId });
+                res.end();
+              },
+              signal: currentController.signal,
+              options: serverConfig,
+            }
+          );
+        } catch (err) {
+          clearActiveController();
+          if (!res.writableEnded) {
+            sendEvent('error', { error: err.message, statusCode: err.statusCode || 500, requestId });
+            res.end();
+          }
+        }
+        return;
+      }
+
+      req.on('close', () => {
+        currentController.abort();
+        clearActiveController();
+      });
+
       const handler = serverConfig.teachHandler || teachPipeline;
       try {
-        const result = await handler(validation.data, serverConfig);
+        const result = await handler(validation.data, { ...serverConfig, signal: currentController.signal });
+        clearActiveController();
         return sendJson(res, 200, result, req);
       } catch (err) {
-        const statusCode = err.statusCode || 500;
+        clearActiveController();
+        const statusCode = err.statusCode || (err.name === 'AbortError' ? 499 : 500);
         return sendJson(res, statusCode, { error: err.message || 'Internal teaching error' }, req);
       }
     }
