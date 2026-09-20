@@ -1,0 +1,21 @@
+{
+  "name": "docvex",
+  "version": "0.1.0",
+  "description": "TeachMe Local — Local-first technical learning voice assistant",
+  "type": "module",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "test": "node --test server/test/*.test.js",
+    "lint": "node --check server/**/*.js"
+  },
+  "keywords": [
+    "local-first",
+    "technical-tutor",
+    "ollama",
+    "speech-synthesis",
+    "chrome-extension"
+  ],
+  "author": "",
+  "license": "MIT"
+}

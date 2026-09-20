@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DocVex Local Tutor</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 16px;
+      font-size: 13px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #334155;
+    }
+    .title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 15px;
+      font-weight: 700;
+      color: #e2e8f0;
+    }
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      background: #1e1b4b;
+      color: #818cf8;
+      border: 1px solid #3730a3;
+    }
+    .status-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+    .status-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .status-item:last-child {
+      margin-bottom: 0;
+    }
+    .status-label {
+      color: #94a3b8;
+    }
+    .status-val {
+      font-weight: 600;
+    }
+    .indicator-online {
+      color: #4ade80;
+    }
+    .indicator-offline {
+      color: #f87171;
+    }
+    .shortcut-box {
+      background: #1e1b4b;
+      border: 1px solid #3730a3;
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
+      margin-bottom: 14px;
+    }
+    .shortcut-text {
+      color: #c7d2fe;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    kbd {
+      background: #312e81;
+      color: #ffffff;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 12px;
+      border: 1px solid #4338ca;
+    }
+    .refresh-btn {
+      width: 100%;
+      background: #4f46e5;
+      color: #ffffff;
+      border: none;
+      padding: 8px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.15s ease;
+    }
+    .refresh-btn:hover {
+      background: #4338ca;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">
+      <span>🎓 DocVex</span>
+      <span class="badge">Local Tutor</span>
+    </div>
+  </div>
+
+  <div class="shortcut-box">
+    <div class="shortcut-text">Select any technical text and press:</div>
+    <kbd>⌘ + Shift + S</kbd>
+  </div>
+
+  <div class="status-card">
+    <div class="status-item">
+      <span class="status-label">Backend (Port 3000):</span>
+      <span id="backend-status" class="status-val">Checking...</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Ollama Service:</span>
+      <span id="ollama-status" class="status-val">Checking...</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Active Model:</span>
+      <span id="model-status" class="status-val">Checking...</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Groq Cloud:</span>
+      <span id="groq-status" class="status-val">Checking...</span>
+    </div>
+  </div>
+
+  <button id="refresh-btn" class="refresh-btn">Check Connection</button>
+
+  <script src="popup.js"></script>
+</body>
+</html>
