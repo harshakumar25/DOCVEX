@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { shapeSpeechText, buildTeachingUserPrompt, TEACHER_SYSTEM_PROMPT } from '../prompt/teacherPrompt.js';
+import { normalizeSpeechText } from '../prompt/speechNormalization.js';
 import { callGroq } from '../providers/groqProvider.js';
 import { callOllama } from '../providers/ollamaProvider.js';
 import { generateExplanation } from '../providers/providerFactory.js';
@@ -81,4 +82,15 @@ test('generateExplanation rejects unsupported providers', async () => {
       return true;
     }
   );
+});
+
+test('normalizeSpeechText makes technical notation speakable without changing display text', () => {
+  const displayText = 'Use O(n log n) with kubectl over HTTPS at C:\\Users\\dev.';
+  const speechText = normalizeSpeechText(displayText);
+
+  assert.equal(displayText, 'Use O(n log n) with kubectl over HTTPS at C:\\Users\\dev.');
+  assert.match(speechText, /order of n log n/);
+  assert.match(speechText, /kube control/);
+  assert.match(speechText, /H T T P S/);
+  assert.doesNotMatch(speechText, /C:\\Users/);
 });

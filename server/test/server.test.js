@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { createServer, validateTeachInput } from '../server.js';
 
 const startTestServer = async (options = {}) => {
@@ -38,6 +41,66 @@ test('GET /health returns 200 without wildcard CORS header for direct/extension 
     assert.equal(body.groq.model, 'openai/gpt-oss-20b');
   } finally {
     await close();
+  }
+});
+
+test('GET /audio serves only provider-owned WAV files to the configured extension origin', async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'docvex-audio-test-'));
+  const fileName = 'sentence.wav';
+  const filePath = path.join(tempDir, fileName);
+  const audioBytes = Buffer.from('RIFF');
+  await writeFile(filePath, audioBytes);
+  const fakeProvider = {
+    safeAudioPath: (requestedName) => {
+      assert.equal(requestedName, fileName);
+      return filePath;
+    },
+    cleanupAudio: async (requestedName) => {
+      assert.equal(requestedName, fileName);
+    },
+  };
+  const { baseUrl, close } = await startTestServer({
+    CHATTERBOX_ENABLED: true,
+    EXTENSION_ORIGIN: 'chrome-extension://docvex-test',
+    chatterboxProvider: fakeProvider,
+  });
+
+  test('GET /audio refuses to serve Chatterbox files without an exact extension origin', async () => {
+    const { baseUrl, close } = await startTestServer({
+      CHATTERBOX_ENABLED: true,
+      EXTENSION_ORIGIN: '',
+      chatterboxProvider: {},
+    });
+    try {
+      const response = await fetch(`${baseUrl}/audio/sentence.wav`, {
+        headers: { Origin: 'chrome-extension://any-extension' },
+      });
+      assert.equal(response.status, 503);
+    } finally {
+      await close();
+    }
+  });
+  try {
+    const allowed = await fetch(`${baseUrl}/audio/${fileName}`, {
+      headers: { Origin: 'chrome-extension://docvex-test' },
+    });
+    assert.equal(allowed.status, 200);
+    assert.equal(await allowed.arrayBuffer().then((bytes) => Buffer.from(bytes).toString()), 'RIFF');
+
+    const blocked = await fetch(`${baseUrl}/audio/${fileName}`, {
+      headers: { Origin: 'chrome-extension://other-extension' },
+    });
+    assert.equal(blocked.status, 403);
+
+    const extensionWorkerFetch = await fetch(`${baseUrl}/audio/${fileName}`, {
+      headers: {
+        'X-DocVex-Extension-Origin': 'chrome-extension://docvex-test',
+      },
+    });
+    assert.equal(extensionWorkerFetch.status, 200);
+  } finally {
+    await close();
+    await rm(tempDir, { recursive: true, force: true });
   }
 });
 

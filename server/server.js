@@ -1,9 +1,9 @@
 import http from 'node:http';
-import { readFileSync } from 'node:fs';
+import { createReadStream, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
-import { teachPipeline, streamTeachPipeline } from './pipeline.js';
+import { getChatterboxProvider, teachPipeline, streamTeachPipeline } from './pipeline.js';
 
 // Origin security: Only allow requests from chrome-extension:// origins or non-browser clients (service worker, curl)
 const applyOriginSecurity = (req, res) => {
@@ -14,7 +14,7 @@ const applyOriginSecurity = (req, res) => {
   if (origin.startsWith('chrome-extension://')) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-DocVex-Extension-Origin');
     return true;
   }
   return false;
@@ -178,6 +178,41 @@ export const createServer = (options = {}) => {
       }, req);
     }
 
+    if (req.method === 'GET' && pathname.startsWith('/audio/')) {
+      if (!serverConfig.CHATTERBOX_ENABLED) {
+        return sendJson(res, 404, { error: 'Local Chatterbox audio is disabled.' }, req);
+      }
+      const origin = req.headers.origin || req.headers['x-docvex-extension-origin'] || '';
+      if (!serverConfig.EXTENSION_ORIGIN) {
+        return sendJson(res, 503, { error: 'EXTENSION_ORIGIN must be configured before local audio is served.' }, req);
+      }
+      if (origin !== serverConfig.EXTENSION_ORIGIN || !origin.startsWith('chrome-extension://')) {
+        return sendJson(res, 403, { error: 'Audio is available only to the configured DocVex extension origin.' }, req);
+      }
+
+      try {
+        const fileName = decodeURIComponent(pathname.slice('/audio/'.length));
+        const provider = getChatterboxProvider(serverConfig);
+        const filePath = provider.safeAudioPath(fileName);
+        const audioStream = createReadStream(filePath);
+        audioStream.once('error', () => {
+          if (!res.writableEnded) sendJson(res, 404, { error: 'Audio file is unavailable.' }, req);
+        });
+        audioStream.once('close', () => {
+          provider.cleanupAudio(fileName).catch(() => {});
+        });
+        res.writeHead(200, {
+          'Content-Type': 'audio/wav',
+          'Cache-Control': 'no-store',
+          'Content-Length': statSync(filePath).size,
+        });
+        audioStream.pipe(res);
+        return;
+      } catch {
+        return sendJson(res, 404, { error: 'Audio file is unavailable.' }, req);
+      }
+    }
+
     // Interactive Demo Test Bench Endpoint
     if (req.method === 'GET' && (pathname === '/demo' || pathname === '/')) {
       try {
@@ -263,6 +298,8 @@ export const createServer = (options = {}) => {
               onMetadata: (data) => sendEvent('metadata', data),
               onToken: (token) => sendEvent('token', { token, requestId }),
               onSpeechReady: (data) => sendEvent('speech_done', { ...data, requestId }),
+              onAudioReady: (data) => sendEvent('audio_ready', { ...data, requestId }),
+              onAudioError: (data) => sendEvent('audio_error', { ...data, requestId }),
               onInsights: (data) => sendEvent('local_insights', { ...data, requestId }),
               onDone: (data) => {
                 clearActiveController();

@@ -16,3 +16,4 @@ npm-debug.log*
 # Scratch & Temporary Files
 scratch/
 tmp/
+.docvex-audio/

@@ -26,6 +26,11 @@
   let activePort = null;
   let activeUtterances = [];
   let speechKeepAliveInterval = null;
+  let chatterboxEnabled = false;
+  let activeAudio = null;
+  let chatterboxAudioQueue = [];
+  let isChatterboxPlaying = false;
+  let chatterboxObjectUrls = new Set();
 
   // Timing metrics
   let timingMetrics = {
@@ -778,7 +783,98 @@
     window.speechSynthesis.speak(utterance);
   }
 
+  function playNextChatterboxAudio() {
+    if (isChatterboxPlaying || chatterboxAudioQueue.length === 0) return;
+    const item = chatterboxAudioQueue.shift();
+    if (!item || item.requestId !== activeRequestId) {
+      playNextChatterboxAudio();
+      return;
+    }
+
+    const blob = new Blob([item.audioBuffer], { type: 'audio/wav' });
+    const objectUrl = URL.createObjectURL(blob);
+    chatterboxObjectUrls.add(objectUrl);
+    const audio = new Audio(objectUrl);
+    activeAudio = audio;
+    isChatterboxPlaying = true;
+
+    audio.onplay = () => {
+      if (item.requestId !== activeRequestId) {
+        finish();
+        return;
+      }
+      if (timingMetrics.t6 === 0) {
+        timingMetrics.t6 = performance.now();
+        console.log(`[DocVex Timing] Chatterbox Playback Started (T0->T6): ${Math.round(timingMetrics.t6 - timingMetrics.t0)}ms`);
+      }
+      isSpeaking = true;
+      isPaused = false;
+      updatePlayButtonState();
+      updateHUDStatus('🔊 Speaking with local Chatterbox…');
+    };
+
+    const finish = () => {
+      isChatterboxPlaying = false;
+      activeAudio = null;
+      URL.revokeObjectURL(objectUrl);
+      chatterboxObjectUrls.delete(objectUrl);
+      if (item.requestId === activeRequestId) {
+        playNextChatterboxAudio();
+        if (!isChatterboxPlaying && chatterboxAudioQueue.length === 0) {
+          isSpeaking = false;
+          isPaused = false;
+          updatePlayButtonState();
+          updateHUDStatus('Finished speaking.');
+        }
+      }
+    };
+
+    audio.onended = finish;
+    audio.onerror = () => {
+      finish();
+      if (item.requestId === activeRequestId) {
+        queueSpeechSentence(item.sentence, item.sentenceIndex, item.requestId);
+        updateHUDStatus('Local Chatterbox audio failed; using browser speech fallback.');
+      }
+    };
+    audio.play().catch(() => {
+      audio.onerror?.();
+    });
+  }
+
+  function queueChatterboxAudio(data, requestId) {
+    if (!data?.audioBuffer || requestId !== activeRequestId) return;
+    chatterboxAudioQueue.push({ ...data, requestId });
+    playNextChatterboxAudio();
+  }
+
+  function stopChatterboxAudio() {
+    chatterboxAudioQueue = [];
+    isChatterboxPlaying = false;
+    if (activeAudio) {
+      activeAudio.pause();
+      activeAudio.src = '';
+      activeAudio = null;
+    }
+    chatterboxObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+    chatterboxObjectUrls.clear();
+  }
+
   function pauseSpeech() {
+    if (chatterboxEnabled && activePort) {
+      activePort.postMessage({ action: 'PAUSE_AUDIO' });
+      isPaused = true;
+      updatePlayButtonState();
+      updateHUDStatus('⏸ Audio paused');
+      return;
+    }
+    if (activeAudio && isChatterboxPlaying) {
+      activeAudio.pause();
+      isPaused = true;
+      updatePlayButtonState();
+      updateHUDStatus('⏸ Audio paused');
+      return;
+    }
     if (window.speechSynthesis && window.speechSynthesis.speaking) {
       window.speechSynthesis.pause();
       isPaused = true;
@@ -788,6 +884,20 @@
   }
 
   function resumeSpeech() {
+    if (chatterboxEnabled && activePort && isPaused) {
+      activePort.postMessage({ action: 'RESUME_AUDIO' });
+      isPaused = false;
+      updatePlayButtonState();
+      updateHUDStatus('🔊 Speaking with local Chatterbox…');
+      return;
+    }
+    if (activeAudio && isPaused) {
+      activeAudio.play().catch(() => {});
+      isPaused = false;
+      updatePlayButtonState();
+      updateHUDStatus('🔊 Speaking with local Chatterbox…');
+      return;
+    }
     if (window.speechSynthesis && window.speechSynthesis.paused) {
       window.speechSynthesis.resume();
       isPaused = false;
@@ -797,6 +907,10 @@
   }
 
   function stopSpeech() {
+    if (chatterboxEnabled && activePort) {
+      activePort.postMessage({ action: 'STOP_AUDIO' });
+    }
+    stopChatterboxAudio();
     clearInterval(speechKeepAliveInterval);
     speechKeepAliveInterval = null;
     activeUtterances = [];
@@ -836,6 +950,7 @@
       activePort = null;
     }
     activeRequestId = null;
+    chatterboxEnabled = false;
     updatePlayButtonState();
   }
 
@@ -893,8 +1008,10 @@
           console.log(`[DocVex Timing] First Complete Sentence (T0->T5): ${latencyT5}ms: "${sentence}"`);
         }
 
-        // Start speaking immediately on sentence 1; queue subsequent sentences
-        queueSpeechSentence(sentence, index, requestId);
+        // Chatterbox audio arrives through the background worker; use browser speech only as fallback.
+        if (!chatterboxEnabled) {
+          queueSpeechSentence(sentence, index, requestId);
+        }
       },
     });
 
@@ -919,6 +1036,7 @@
         const { event, data } = msg;
 
         if (event === 'metadata') {
+          chatterboxEnabled = Boolean(data.chatterbox?.enabled);
           if (data.groundingStatus) {
             updateHUDBadge(data.groundingStatus);
           }
@@ -950,6 +1068,11 @@
           // Background Ollama deep-dive reasoning completed
           if (data.insights) {
             renderHUDInsights(data.insights);
+          }
+        } else if (event === 'audio_error') {
+          if (data.sentence && data.requestId === activeRequestId) {
+            queueSpeechSentence(data.sentence, data.sentenceIndex, data.requestId);
+            updateHUDStatus('Local Chatterbox audio failed; using browser speech fallback.');
           }
         } else if (event === 'done') {
           timingMetrics.t7 = performance.now();
@@ -984,6 +1107,33 @@
             status: 'Error',
             error: data.error || 'Server error occurred during streaming.',
           });
+        }
+      } else if (msg.action === 'AUDIO_PLAYBACK') {
+        const data = msg.data || {};
+        if (msg.requestId !== activeRequestId) return;
+        if (msg.event === 'started') {
+          if (data.sentenceIndex === 1 && timingMetrics.t6 === 0) {
+            timingMetrics.t6 = performance.now();
+            console.log(`[DocVex Timing] Chatterbox Playback Started (T0->T6): ${Math.round(timingMetrics.t6 - timingMetrics.t0)}ms`);
+          }
+          isSpeaking = true;
+          isPaused = false;
+          updatePlayButtonState();
+          updateHUDStatus('🔊 Speaking with local Chatterbox…');
+        } else if (msg.event === 'ended') {
+          isSpeaking = false;
+          isPaused = false;
+          updatePlayButtonState();
+          updateHUDStatus('Finished speaking.');
+        } else if (msg.event === 'error') {
+          queueSpeechSentence(data.sentence, data.sentenceIndex, msg.requestId);
+          updateHUDStatus('Local Chatterbox audio failed; using browser speech fallback.');
+        }
+      } else if (msg.action === 'AUDIO_ERROR') {
+        const data = msg.data || {};
+        if (data.sentence && msg.requestId === activeRequestId) {
+          queueSpeechSentence(data.sentence, data.sentenceIndex, msg.requestId);
+          updateHUDStatus('Local Chatterbox audio failed; using browser speech fallback.');
         }
       } else if (msg.action === 'STREAM_ERROR') {
         renderHUDSkeleton({

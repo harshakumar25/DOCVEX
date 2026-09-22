@@ -15,6 +15,7 @@ test('manifest.json conforms to Manifest V3 specification', () => {
   assert.ok(manifest.permissions.includes('contextMenus'));
   assert.ok(manifest.permissions.includes('activeTab'));
   assert.ok(manifest.permissions.includes('storage'));
+  assert.ok(manifest.permissions.includes('offscreen'));
   assert.equal(manifest.background.service_worker, 'background.js');
   assert.ok(manifest.commands['teach-selection']);
   assert.equal(manifest.commands['teach-selection'].suggested_key.mac, 'MacCtrl+Shift+S');
@@ -29,11 +30,15 @@ test('manifest.json conforms to Manifest V3 specification', () => {
 test('extension JS files exist and are non-empty', () => {
   const bgPath = path.resolve(process.cwd(), 'extension/background.js');
   const csPath = path.resolve(process.cwd(), 'extension/content.js');
+  const offscreenHtmlPath = path.resolve(process.cwd(), 'extension/offscreen.html');
+  const offscreenJsPath = path.resolve(process.cwd(), 'extension/offscreen.js');
   const popupHtml = path.resolve(process.cwd(), 'extension/popup.html');
   const popupJs = path.resolve(process.cwd(), 'extension/popup.js');
 
   assert.ok(fs.statSync(bgPath).size > 0);
   assert.ok(fs.statSync(csPath).size > 0);
+  assert.ok(fs.statSync(offscreenHtmlPath).size > 0);
+  assert.ok(fs.statSync(offscreenJsPath).size > 0);
   assert.ok(fs.statSync(popupHtml).size > 0);
   assert.ok(fs.statSync(popupJs).size > 0);
 });

@@ -6,6 +6,43 @@
  */
 
 const BACKEND_URL = 'http://127.0.0.1:3000';
+const EXTENSION_ORIGIN = chrome.runtime.getURL('').replace(/\/$/, '');
+let activeStreamPort = null;
+
+const sendRuntimeMessage = (message) => {
+  try {
+    const result = chrome.runtime.sendMessage(message);
+    return result && typeof result.catch === 'function' ? result : Promise.resolve();
+  } catch {
+    return Promise.reject(new Error('Extension runtime messaging failed.'));
+  }
+};
+
+const ensureOffscreenDocument = async () => {
+  if (!chrome.offscreen) {
+    throw new Error('Chrome offscreen audio support is unavailable.');
+  }
+  if (await chrome.offscreen.hasDocument()) return;
+  await chrome.offscreen.createDocument({
+    url: 'offscreen.html',
+    reasons: ['AUDIO_PLAYBACK'],
+    justification: 'Play locally synthesized DocVex teaching audio outside the service worker.',
+  });
+};
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.action !== 'AUDIO_PLAYBACK_EVENT' || !activeStreamPort) return;
+  try {
+    activeStreamPort.postMessage({
+      action: 'AUDIO_PLAYBACK',
+      requestId: message.requestId,
+      event: message.event,
+      data: message,
+    });
+  } catch {
+    activeStreamPort = null;
+  }
+});
 
 // Register Context Menu
 chrome.runtime.onInstalled.addListener(() => {
@@ -116,6 +153,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
   let abortController = null;
   let isPortConnected = true;
+  activeStreamPort = port;
 
   const safePostMessage = (msg) => {
     if (!isPortConnected) return;
@@ -136,6 +174,17 @@ chrome.runtime.onConnect.addListener((port) => {
       }
       abortController = new AbortController();
       const { requestId, payload } = msg;
+      try {
+        await ensureOffscreenDocument();
+        await sendRuntimeMessage({ action: 'SET_ACTIVE_REQUEST', requestId });
+      } catch (error) {
+        safePostMessage({
+          action: 'STREAM_ERROR',
+          requestId,
+          error: error.message,
+        });
+        return;
+      }
 
       try {
         const response = await fetch(`${BACKEND_URL}/teach`, {
@@ -184,12 +233,51 @@ chrome.runtime.onConnect.addListener((port) => {
             if (dataStr) {
               try {
                 const parsed = JSON.parse(dataStr);
-                safePostMessage({
-                  action: 'STREAM_EVENT',
-                  event,
-                  data: parsed,
-                  requestId,
-                });
+                if (event === 'audio_ready' && parsed.fileName) {
+                  fetch(`${BACKEND_URL}/audio/${encodeURIComponent(parsed.fileName)}`, {
+                    headers: {
+                      Accept: 'audio/wav',
+                      'X-DocVex-Extension-Origin': EXTENSION_ORIGIN,
+                    },
+                    signal: abortController.signal,
+                  })
+                    .then((audioResponse) => {
+                      if (!audioResponse.ok) {
+                        throw new Error(`Audio request failed (${audioResponse.status})`);
+                      }
+                      return audioResponse.arrayBuffer();
+                    })
+                    .then((audioBuffer) => {
+                      sendRuntimeMessage({
+                        action: 'PLAY_AUDIO',
+                        requestId,
+                        ...parsed,
+                        audioBuffer,
+                      }).catch((error) => {
+                        safePostMessage({
+                          action: 'AUDIO_ERROR',
+                          requestId,
+                          data: { ...parsed, error: error.message },
+                        });
+                      });
+                    })
+                    .catch((error) => {
+                      if (error.name !== 'AbortError') {
+                        safePostMessage({
+                          action: 'AUDIO_ERROR',
+                          requestId,
+                          data: { ...parsed, error: error.message },
+                        });
+                      }
+                    });
+                } else {
+                  safePostMessage({
+                    action: 'STREAM_EVENT',
+                    event,
+                    data: parsed,
+                    requestId,
+                  });
+                }
               } catch {
                 // Ignore parse errors on partial or invalid chunks
               }
@@ -212,6 +300,13 @@ chrome.runtime.onConnect.addListener((port) => {
         abortController.abort();
         abortController = null;
       }
+      sendRuntimeMessage({ action: 'STOP_AUDIO' }).catch(() => {});
+    } else if (msg.action === 'PAUSE_AUDIO') {
+      sendRuntimeMessage({ action: 'PAUSE_AUDIO' }).catch(() => {});
+    } else if (msg.action === 'RESUME_AUDIO') {
+      sendRuntimeMessage({ action: 'RESUME_AUDIO' }).catch(() => {});
+    } else if (msg.action === 'STOP_AUDIO') {
+      sendRuntimeMessage({ action: 'STOP_AUDIO' }).catch(() => {});
     }
   });
 
@@ -221,5 +316,7 @@ chrome.runtime.onConnect.addListener((port) => {
       abortController.abort();
       abortController = null;
     }
+    sendRuntimeMessage({ action: 'STOP_AUDIO' }).catch(() => {});
+    if (activeStreamPort === port) activeStreamPort = null;
   });
 });

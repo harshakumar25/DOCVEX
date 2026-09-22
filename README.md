@@ -13,7 +13,7 @@ DocVex is a lightweight, local-first technical voice tutor. Instead of reading t
 - **Local-First & Private**: Powered by [Ollama](https://ollama.com) running locally (`qwen3:4b` by default). No API keys required.
 - **Optional Fast Cloud Provider**: Support for Groq (`llama-3.1-8b-instant`) when ultra-low latency is desired.
 - **Authoritative Source Verification**: Restricts external context retrieval strictly to an explicit allowlist of official documentation (`kubernetes.io`, `developer.mozilla.org`, `docs.python.org`, `ietf.org`, etc.).
-- **Speech-Optimized Engine**: Strips code punctuation noise, markdown syntax, and raw URLs to produce smooth, conversational speech via the Web Speech API.
+- **Speech-Optimized Engine**: Strips code punctuation noise, markdown syntax, and raw URLs to produce smooth, conversational speech. Optional local Chatterbox audio is played from an MV3 offscreen document; Web Speech is fallback only.
 - **Audio Controls & Floating HUD**: An isolated Shadow DOM floating HUD providing Play, Pause, Resume, Stop controls, status indicators, and verified source links.
 
 ---
@@ -43,6 +43,23 @@ OLLAMA_HOST=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen3:4b
 DEFAULT_PROVIDER=ollama
 ```
+
+Local Chatterbox sentence audio is opt-in. Before enabling it, select a
+benchmarked model and set the exact origin of the loaded unpacked extension:
+
+```env
+CHATTERBOX_ENABLED=true
+CHATTERBOX_MODEL=nano
+EXTENSION_ORIGIN=chrome-extension://<your-loaded-extension-id>
+```
+
+The backend refuses to serve Chatterbox audio unless `EXTENSION_ORIGIN` is
+configured exactly; this prevents arbitrary browser extensions from reading
+generated audio files.
+
+Chatterbox uses sentence-level pipelined synthesis, not native incremental
+audio generation. The model stays loaded in a long-lived worker, and the MV3
+service worker transports generated WAV files to the offscreen audio document.
 
 ### 2. Pull the Ollama Model
 

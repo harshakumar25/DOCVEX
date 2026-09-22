@@ -29,6 +29,14 @@ const parseProvider = (value, fallback = 'ollama') => {
   return fallback;
 };
 
+const parseBoolean = (value, fallback = false) => {
+  if (typeof value !== 'string') return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
+};
+
 export const config = Object.freeze({
   HOST: (process.env.HOST || '127.0.0.1').trim(),
   PORT: parsePort(process.env.PORT, 3000),
@@ -38,10 +46,21 @@ export const config = Object.freeze({
   GROQ_MODEL: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
   DEFAULT_PROVIDER: parseProvider(process.env.DEFAULT_PROVIDER, 'ollama'),
   MAX_SELECTION_LENGTH: parsePositiveInteger(process.env.MAX_SELECTION_LENGTH, 12000),
+  CHATTERBOX_ENABLED: parseBoolean(process.env.CHATTERBOX_ENABLED, false),
+  CHATTERBOX_PYTHON: process.env.CHATTERBOX_PYTHON || path.resolve(process.cwd(), 'chatterbox/.venv/bin/python'),
+  CHATTERBOX_WORKER: process.env.CHATTERBOX_WORKER || path.resolve(process.cwd(), 'chatterbox/docvex_worker.py'),
+  CHATTERBOX_MODEL: (process.env.CHATTERBOX_MODEL || '').trim(),
+  CHATTERBOX_DEVICE: (process.env.CHATTERBOX_DEVICE || 'auto').trim(),
+  CHATTERBOX_TEMP_DIR: process.env.CHATTERBOX_TEMP_DIR || path.resolve(process.cwd(), '.docvex-audio'),
+  EXTENSION_ORIGIN: (process.env.EXTENSION_ORIGIN || '').trim(),
+  CHATTERBOX_STARTUP_TIMEOUT_MS: parsePositiveInteger(process.env.CHATTERBOX_STARTUP_TIMEOUT_MS, 120000),
+  CHATTERBOX_REQUEST_TIMEOUT_MS: parsePositiveInteger(process.env.CHATTERBOX_REQUEST_TIMEOUT_MS, 120000),
+  CHATTERBOX_MAX_QUEUE: parsePositiveInteger(process.env.CHATTERBOX_MAX_QUEUE, 2),
 });
 
 export const helpers = {
   parsePort,
   parsePositiveInteger,
   parseProvider,
+  parseBoolean,
 };

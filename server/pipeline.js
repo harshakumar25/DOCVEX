@@ -1,7 +1,39 @@
 import { buildTeachingPrompt, shapeSpeechText, TEACHER_SYSTEM_PROMPT } from './prompt/teacherPrompt.js';
 import { buildReasoningPrompt, OLLAMA_REASONING_SYSTEM_PROMPT } from './prompt/reasoningPrompt.js';
 import { generateExplanation, streamExplanation } from './providers/providerFactory.js';
+import { ChatterboxProvider } from './providers/chatterboxProvider.js';
 import { retrieveVerifiedReferences } from './retrieval/referenceEngine.js';
+import { SentenceBuffer } from './prompt/sentenceBuffer.js';
+import { normalizeSpeechText } from './prompt/speechNormalization.js';
+
+const chatterboxProviders = new WeakMap();
+
+export const getChatterboxProvider = (options) => {
+  if (options.chatterboxProvider) return options.chatterboxProvider;
+  if (!options.CHATTERBOX_ENABLED) return null;
+  if (chatterboxProviders.has(options)) return chatterboxProviders.get(options);
+
+  const provider = new ChatterboxProvider({
+    pythonPath: options.CHATTERBOX_PYTHON,
+    workerPath: options.CHATTERBOX_WORKER,
+    model: options.CHATTERBOX_MODEL,
+    device: options.CHATTERBOX_DEVICE,
+    tempDir: options.CHATTERBOX_TEMP_DIR,
+    startupTimeoutMs: options.CHATTERBOX_STARTUP_TIMEOUT_MS,
+    requestTimeoutMs: options.CHATTERBOX_REQUEST_TIMEOUT_MS,
+    maxQueue: options.CHATTERBOX_MAX_QUEUE,
+  });
+  chatterboxProviders.set(options, provider);
+  return provider;
+};
+
+const isMeaningfulTeachingSentence = (sentence) => {
+  const normalized = sentence.trim().toLowerCase();
+  if (normalized.length < 20) return false;
+  if (/^(sure|okay|certainly|of course|here'?s|let'?s)\b/.test(normalized)) return false;
+  if (/^#{1,6}\s|^[\u{1f300}-\u{1faff}]/u.test(sentence)) return false;
+  return /[a-z]{3}/i.test(sentence);
+};
 
 /**
  * Full DocVex teaching pipeline:
@@ -113,7 +145,7 @@ export const teachPipeline = async (
  */
 export const streamTeachPipeline = async (
   { text, title = '', url = '', pageContext = '', provider, requestId },
-  { onMetadata, onToken, onSpeechReady, onInsights, onDone, onError, signal, options = {} } = {}
+  { onMetadata, onToken, onSpeechReady, onAudioReady, onAudioError, onInsights, onDone, onError, signal, options = {} } = {}
 ) => {
   let references = [];
   try {
@@ -146,6 +178,12 @@ export const streamTeachPipeline = async (
   const chosenProvider = provider || options.DEFAULT_PROVIDER || 'ollama';
   const isHybrid = chosenProvider === 'hybrid';
   const voiceProvider = isHybrid ? 'groq' : chosenProvider;
+  const chatterbox = getChatterboxProvider(options);
+  const audioPromises = [];
+
+  if (chatterbox) {
+    chatterbox.start().catch(() => {});
+  }
 
   const modelName = isHybrid
     ? `${options.GROQ_MODEL || 'openai/gpt-oss-20b'} + ${options.OLLAMA_MODEL || 'qwen3:4b'}`
@@ -160,8 +198,52 @@ export const streamTeachPipeline = async (
       provider: chosenProvider,
       model: modelName,
       isHybrid,
+      chatterbox: chatterbox
+        ? { enabled: true, model: options.CHATTERBOX_MODEL, nativeIncrementalGeneration: false }
+        : { enabled: false },
     });
   }
+
+  const sentenceBuffer = chatterbox
+    ? new SentenceBuffer({
+        minSentenceLength: 10,
+        onSentence: (sentence, sentenceIndex) => {
+          if (!isMeaningfulTeachingSentence(sentence)) return;
+          const speechText = normalizeSpeechText(sentence);
+          const audioPromise = chatterbox
+            .synthesize(speechText, { requestId: `${requestId}-sentence-${sentenceIndex}` })
+            .then((audio) => {
+              if (typeof onAudioReady === 'function') {
+                onAudioReady({
+                  requestId,
+                  sentence,
+                  sentenceIndex,
+                  speechText,
+                  fileName: audio.fileName,
+                  sampleRate: audio.sampleRate,
+                  durationSeconds: audio.durationSeconds,
+                  generatedAudioAvailableSeconds: audio.generatedAudioAvailableSeconds,
+                  model: audio.model,
+                });
+              }
+              return audio;
+            })
+            .catch((error) => {
+              if (typeof onAudioError === 'function') {
+                onAudioError({
+                  requestId,
+                  sentence,
+                  sentenceIndex,
+                  error: error.message,
+                  statusCode: error.statusCode || 502,
+                });
+              }
+              return null;
+            });
+          audioPromises.push(audioPromise);
+        },
+      })
+    : null;
 
   // In hybrid mode, dispatch background deep-dive reasoning with Ollama concurrently
   let ollamaPromise = null;
@@ -188,7 +270,10 @@ export const streamTeachPipeline = async (
       provider: voiceProvider,
       options,
       signal,
-      onToken,
+      onToken: (token) => {
+        onToken?.(token);
+        sentenceBuffer?.addToken(token);
+      },
     });
 
     const speechFriendly = shapeSpeechText(modelResult.explanation);
@@ -202,6 +287,11 @@ export const streamTeachPipeline = async (
         sources,
         groundingStatus,
       });
+    }
+
+    sentenceBuffer?.flush();
+    if (audioPromises.length > 0) {
+      await Promise.allSettled(audioPromises);
     }
 
     // Await background Ollama reasoning insights if in hybrid mode

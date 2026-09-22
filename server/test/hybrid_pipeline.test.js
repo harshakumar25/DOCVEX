@@ -236,3 +236,61 @@ test('teachPipeline executes complete flow in hybrid mode', async () => {
   assert.ok(result.explanation.includes('Groq explanation'));
   assert.ok(result.insights.includes('Ollama deep mental model'));
 });
+
+test('streamTeachPipeline sends meaningful sentences through the optional Chatterbox provider', async () => {
+  const audioEvents = [];
+  const fakeChatterbox = {
+    start: async () => {},
+    synthesize: async (speechText, { requestId }) => ({
+      fileName: `${requestId}.wav`,
+      filePath: `/tmp/${requestId}.wav`,
+      sampleRate: 24000,
+      durationSeconds: 2,
+      generatedAudioAvailableSeconds: 0.2,
+      model: 'test-nano',
+      speechText,
+    }),
+  };
+
+  const mockFetch = async (url) => {
+    if (String(url).includes('groq.com')) {
+      const chunks = [
+        'data: {"choices":[{"delta":{"content":"The main idea is that Kubernetes keeps the running system aligned with the desired state. "}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"It repeatedly compares reality with the declaration and makes corrective changes."}}]}\n\n',
+        'data: [DONE]\n\n',
+      ];
+      let index = 0;
+      const stream = new ReadableStream({
+        pull(controller) {
+          if (index < chunks.length) controller.enqueue(new TextEncoder().encode(chunks[index++]));
+          else controller.close();
+        },
+      });
+      return { ok: true, status: 200, body: stream };
+    }
+    if (String(url).includes('11434')) {
+      return { ok: true, status: 200, json: async () => ({ message: { content: 'Background insight.' } }) };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+
+  await streamTeachPipeline(
+    { text: 'Kubernetes desired state', provider: 'hybrid', requestId: 'audio-test' },
+    {
+      options: {
+        GROQ_API_KEY: 'test-key',
+        fetchFn: mockFetch,
+        retrieveVerifiedReferences: async () => [],
+        chatterboxProvider: fakeChatterbox,
+      },
+      onToken: () => {},
+      onAudioReady: (data) => audioEvents.push(data),
+      onAudioError: (data) => audioEvents.push({ error: data.error }),
+    }
+  );
+
+  assert.equal(audioEvents.length, 2);
+  assert.equal(audioEvents[0].model, 'test-nano');
+  assert.match(audioEvents[0].speechText, /Kubernetes/);
+  assert.ok(audioEvents.every((event) => !event.error));
+});
