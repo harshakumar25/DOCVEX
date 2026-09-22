@@ -1,0 +1,99 @@
+{
+  "model": "turbo",
+  "device": "mps",
+  "python": "3.11.16",
+  "torch": "2.6.0",
+  "mps_available": true,
+  "cold_load_seconds": 471.4622346670003,
+  "rss_before_bytes": 192856064,
+  "rss_after_bytes": 5094719488,
+  "mps_before_bytes": 0,
+  "mps_after_bytes": 2822501376,
+  "runs_per_sentence": 2,
+  "sentences": [
+    {
+      "sentence": "Kubernetes describes the state you want and continuously works to make reality match that state.",
+      "runs": [
+        {
+          "run": 1,
+          "generated_audio_available_seconds": 9.090760666000278,
+          "audio_duration_seconds": 5.16,
+          "real_time_factor": 1.7617753228682709,
+          "sample_rate": 24000,
+          "audio_path": "benchmark-results/turbo-sentence-1-run-1.wav",
+          "rss_bytes": 5094719488,
+          "mps_allocated_bytes": 2822501376
+        },
+        {
+          "run": 2,
+          "generated_audio_available_seconds": 3.558552874997986,
+          "audio_duration_seconds": 5.16,
+          "real_time_factor": 0.6896420300383693,
+          "sample_rate": 24000,
+          "audio_path": "benchmark-results/turbo-sentence-1-run-2.wav",
+          "rss_bytes": 5094719488,
+          "mps_allocated_bytes": 2822501376
+        }
+      ]
+    },
+    {
+      "sentence": "A hash table usually provides constant average-time lookup by mapping a key to a bucket.",
+      "runs": [
+        {
+          "run": 1,
+          "generated_audio_available_seconds": 4.183594958998583,
+          "audio_duration_seconds": 5.4,
+          "real_time_factor": 0.7747398072219598,
+          "sample_rate": 24000,
+          "audio_path": "benchmark-results/turbo-sentence-2-run-1.wav",
+          "rss_bytes": 5094719488,
+          "mps_allocated_bytes": 2822501376
+        },
+        {
+          "run": 2,
+          "generated_audio_available_seconds": 3.8450722090019553,
+          "audio_duration_seconds": 5.32,
+          "real_time_factor": 0.7227579340229239,
+          "sample_rate": 24000,
+          "audio_path": "benchmark-results/turbo-sentence-2-run-2.wav",
+          "rss_bytes": 5094719488,
+          "mps_allocated_bytes": 2822501376
+        }
+      ]
+    },
+    {
+      "sentence": "The browser sends an HTTP request, and the server returns a response with a status code and a body.",
+      "runs": [
+        {
+          "run": 1,
+          "generated_audio_available_seconds": 4.998726500001794,
+          "audio_duration_seconds": 6.12,
+          "real_time_factor": 0.8167853758172866,
+          "sample_rate": 24000,
+          "audio_path": "benchmark-results/turbo-sentence-3-run-1.wav",
+          "rss_bytes": 5094719488,
+          "mps_allocated_bytes": 2822501376
+        },
+        {
+          "run": 2,
+          "generated_audio_available_seconds": 3.4756244589989365,
+          "audio_duration_seconds": 5.16,
+          "real_time_factor": 0.6735706315889411,
+          "sample_rate": 24000,
+          "audio_path": "benchmark-results/turbo-sentence-3-run-2.wav",
+          "rss_bytes": 5094719488,
+          "mps_allocated_bytes": 2822501376
+        }
+      ]
+    }
+  ],
+  "native_incremental_generation_verified": false,
+  "quality_observations_required": [
+    "pronunciation",
+    "intelligibility",
+    "stability",
+    "voice_naturalness",
+    "technical_term_handling"
+  ],
+  "notes": "The checked-out public TTS wrappers expose synchronous generate() methods. Do not interpret generated_audio_available_seconds as native streaming."
+}
