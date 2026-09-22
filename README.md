@@ -8,7 +8,7 @@ DocVex is a lightweight, local-first technical voice tutor. Instead of reading t
 
 ## ⚡ Key Features
 
-- **One-Shortcut Workflow**: Select any text on a webpage and press `⌘ + Shift + S` (`Ctrl + Shift + S` on Windows/Linux).
+- **One-Shortcut Workflow**: Select any text on a webpage and press `^ + Shift + S` (`Ctrl + Shift + S` on Windows/Linux).
 - **Teaches Concepts, Doesn't Just Read**: Explains meaning, significance, mechanics, analogies, and practical examples.
 - **Local-First & Private**: Powered by [Ollama](https://ollama.com) running locally (`qwen3:4b` by default). No API keys required.
 - **Optional Fast Cloud Provider**: Support for Groq (`llama-3.1-8b-instant`) when ultra-low latency is desired.
@@ -98,7 +98,7 @@ curl http://127.0.0.1:3000/health
 
 1. Navigate to any technical documentation page (e.g., [Kubernetes Concepts](https://kubernetes.io/docs/concepts/overview/) or [MDN Web Docs](https://developer.mozilla.org)).
 2. Select any sentence, paragraph, or code snippet.
-3. Press **`⌘ + Shift + S`** (or right-click the selection and choose **🎓 Teach me this**).
+3. Press **`^ + Shift + S`** (or right-click the selection and choose **🎓 Teach me this**).
 4. A sleek floating tutor panel appears at the bottom right.
 5. The local model reconstructs the explanation and automatically begins speaking aloud!
 6. Use the on-screen buttons to **Pause**, **Resume**, or **Stop** audio playback at any time.
@@ -134,7 +134,7 @@ Chrome Extension (Manifest V3)
        │
  Selected Text + Page Context
        │
-  ⌘ + Shift + S  /  Context Menu
+  ^ + Shift + S  /  Context Menu
        │
        ▼
 Local Node.js Server (Port 3000)
@@ -179,7 +179,7 @@ ollama pull qwen3:4b
 
 ### 3. Shortcut does not trigger
 - In Chrome, navigate to `chrome://extensions/shortcuts`.
-- Verify that **Teach me the selected text** is mapped to `⌘ + Shift + S` (or assign your preferred shortcut).
+- Verify that **Teach me the selected text** is mapped to `^ + Shift + S` (or assign your preferred shortcut).
 - As a fallback, you can always right-click any selected text and click **🎓 Teach me this**.
 
 ### 4. "DocVex backend is not running"
