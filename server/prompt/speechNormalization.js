@@ -2,6 +2,7 @@ const DEFAULT_SPEECH_DICTIONARY = Object.freeze({
   'O(n log n)': 'order of n log n',
   kubectl: 'kube control',
   gRPC: 'gee R P C',
+  'HTTP/2': 'H T T P two',
   HTTP: 'H T T P',
   HTTPS: 'H T T P S',
   TCP: 'T C P',

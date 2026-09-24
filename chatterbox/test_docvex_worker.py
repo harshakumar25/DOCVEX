@@ -63,6 +63,19 @@ class WorkerProtocolTests(unittest.TestCase):
             finally:
                 docvex_worker.write_message = original_write_message
 
+    def test_post_process_waveform_limits_peaks_and_applies_fade(self):
+        # A test tensor exceeding 1.0 peak
+        raw = torch.tensor([[1.5, -2.0, 1.2, 0.5, -0.8]])
+        processed = docvex_worker.post_process_waveform(raw, sr=24000, target_peak_db=-1.5)
+        # Verify peak does not exceed headroom
+        self.assertLessEqual(processed.max().item(), 0.85)
+        self.assertGreaterEqual(processed.min().item(), -0.85)
+
+        long_waveform = torch.ones(1, 1000)
+        faded = docvex_worker.post_process_waveform(long_waveform, sr=24000)
+        self.assertAlmostEqual(faded[0, 0].item(), 0.0, places=6)
+        self.assertAlmostEqual(faded[0, -1].item(), 0.0, places=6)
+
 
 if __name__ == "__main__":
     unittest.main()

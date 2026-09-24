@@ -19,6 +19,7 @@ export const getChatterboxProvider = (options) => {
     model: options.CHATTERBOX_MODEL,
     device: options.CHATTERBOX_DEVICE,
     tempDir: options.CHATTERBOX_TEMP_DIR,
+    voicePrompt: options.CHATTERBOX_VOICE_PROMPT,
     startupTimeoutMs: options.CHATTERBOX_STARTUP_TIMEOUT_MS,
     requestTimeoutMs: options.CHATTERBOX_REQUEST_TIMEOUT_MS,
     maxQueue: options.CHATTERBOX_MAX_QUEUE,
@@ -29,8 +30,11 @@ export const getChatterboxProvider = (options) => {
 
 const isMeaningfulTeachingSentence = (sentence) => {
   const normalized = sentence.trim().toLowerCase();
-  if (normalized.length < 20) return false;
-  if (/^(sure|okay|certainly|of course|here'?s|let'?s)\b/.test(normalized)) return false;
+  if (normalized.length < 15) return false;
+  // Filter out pure assistant pleasantries like "Sure, I can help you with that."
+  if (/^(sure[,.]?|okay[,.]?|certainly[,.]?|of course[,.]?|absolutely[,.]?)\s*(i can|here is your|i'll explain)/.test(normalized)) {
+    return false;
+  }
   if (/^#{1,6}\s|^[\u{1f300}-\u{1faff}]/u.test(sentence)) return false;
   return /[a-z]{3}/i.test(sentence);
 };
@@ -211,7 +215,7 @@ export const streamTeachPipeline = async (
           if (!isMeaningfulTeachingSentence(sentence)) return;
           const speechText = normalizeSpeechText(sentence);
           const audioPromise = chatterbox
-            .synthesize(speechText, { requestId: `${requestId}-sentence-${sentenceIndex}` })
+            .synthesize(speechText, { requestId: `${requestId}-sentence-${sentenceIndex}`, signal })
             .then((audio) => {
               if (typeof onAudioReady === 'function') {
                 onAudioReady({
@@ -229,6 +233,7 @@ export const streamTeachPipeline = async (
               return audio;
             })
             .catch((error) => {
+              console.error('[DocVex Pipeline Audio Error]', error);
               if (typeof onAudioError === 'function') {
                 onAudioError({
                   requestId,

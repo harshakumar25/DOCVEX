@@ -120,7 +120,7 @@
 
   // --- SentenceBuffer Class ---
   class ClientSentenceBuffer {
-    constructor({ onSentence, minSentenceLength = 10, maxUtteranceLength = 160 }) {
+    constructor({ onSentence, minSentenceLength = 10, maxUtteranceLength = 360 }) {
       this.buffer = '';
       this.onSentence = onSentence;
       this.minSentenceLength = minSentenceLength;
@@ -701,19 +701,60 @@
     sourcesDiv.style.display = 'block';
   }
 
+  // Filter out harsh, robotic novelty voices and prioritize warm, natural human voices
+  const NOVELTY_OR_ROBOTIC_VOICE_NAMES = new Set([
+    'albert', 'alex', 'bad news', 'bahh', 'bells', 'boing', 'bubbles',
+    'cellos', 'deranged', 'fred', 'good news', 'hysterical', 'jester',
+    'organ', 'superstar', 'trinoids', 'whisper', 'wobble', 'zarvox', 'junior', 'ralph'
+  ]);
+
+  const PREFERRED_VOICE_NAMES = [
+    'samantha', 'ava', 'daniel', 'oliver', 'serena', 'karen', 'moira', 'tessa',
+    'natural', 'neural', 'premium', 'enhanced', 'google', 'siri'
+  ];
+
+  function selectBestSpeechVoice(voices) {
+    if (!voices || voices.length === 0) return null;
+    const qualityVoices = voices.filter((v) => {
+      const lowerName = (v.name || '').toLowerCase();
+      return !Array.from(NOVELTY_OR_ROBOTIC_VOICE_NAMES).some((bad) => lowerName === bad || lowerName.startsWith(`${bad} `) || lowerName.includes(` ${bad}`));
+    });
+    if (qualityVoices.length === 0) return null;
+
+    const englishVoices = qualityVoices.filter((v) => v.lang && v.lang.startsWith('en'));
+    const candidatePool = englishVoices.length > 0 ? englishVoices : qualityVoices;
+    for (const preferred of PREFERRED_VOICE_NAMES) {
+      const match = candidatePool.find((v) => (v.name || '').toLowerCase().includes(preferred));
+      if (match) return match;
+    }
+    return candidatePool[0];
+  }
+
+  let cachedVoices = [];
+  function updateVoices() {
+    if ('speechSynthesis' in window) {
+      const v = window.speechSynthesis.getVoices();
+      if (v && v.length > 0) {
+        cachedVoices = v;
+      }
+    }
+  }
+  updateVoices();
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = updateVoices;
+  }
+
   // --- Speech Queue & Playback Engine ---
   function queueSpeechSentence(sentence, index, requestId) {
     if (!sentence || !('speechSynthesis' in window)) return;
     if (requestId !== activeRequestId) return; // Discard stale requests
 
     const utterance = new SpeechSynthesisUtterance(sentence);
-    utterance.rate = 1.0;
+    utterance.rate = 0.97;
     utterance.pitch = 1.0;
 
-    const voices = window.speechSynthesis.getVoices();
-    const naturalVoice =
-      voices.find((v) => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Siri') || v.name.includes('Google'))) ||
-      voices.find((v) => v.lang.startsWith('en'));
+    const voices = cachedVoices.length > 0 ? cachedVoices : window.speechSynthesis.getVoices();
+    const naturalVoice = selectBestSpeechVoice(voices);
     if (naturalVoice) {
       utterance.voice = naturalVoice;
     }
@@ -1070,6 +1111,7 @@
             renderHUDInsights(data.insights);
           }
         } else if (event === 'audio_error') {
+          console.error('[DocVex audio_error event]', data);
           if (data.sentence && data.requestId === activeRequestId) {
             queueSpeechSentence(data.sentence, data.sentenceIndex, data.requestId);
             updateHUDStatus('Local Chatterbox audio failed; using browser speech fallback.');
@@ -1099,8 +1141,10 @@
             renderHUDSources(data.sources);
           }
 
-          if (!isSpeaking) {
+          if (!chatterboxEnabled && !isSpeaking) {
             updateHUDStatus('Explanation complete.');
+          } else if (chatterboxEnabled && !isSpeaking) {
+            updateHUDStatus('🎙️ Synthesizing voice with Chatterbox…');
           }
         } else if (event === 'error') {
           renderHUDSkeleton({
@@ -1112,19 +1156,23 @@
         const data = msg.data || {};
         if (msg.requestId !== activeRequestId) return;
         if (msg.event === 'started') {
-          if (data.sentenceIndex === 1 && timingMetrics.t6 === 0) {
+          if (timingMetrics.t6 === 0) {
             timingMetrics.t6 = performance.now();
             console.log(`[DocVex Timing] Chatterbox Playback Started (T0->T6): ${Math.round(timingMetrics.t6 - timingMetrics.t0)}ms`);
           }
           isSpeaking = true;
           isPaused = false;
           updatePlayButtonState();
-          updateHUDStatus('🔊 Speaking with local Chatterbox…');
+          updateHUDStatus(`🔊 Speaking with local Chatterbox… (sentence ${data.sentenceIndex || 1})`);
         } else if (msg.event === 'ended') {
-          isSpeaking = false;
-          isPaused = false;
-          updatePlayButtonState();
-          updateHUDStatus('Finished speaking.');
+          if (data.hasMore) {
+            updateHUDStatus('🔊 Speaking with local Chatterbox…');
+          } else {
+            isSpeaking = false;
+            isPaused = false;
+            updatePlayButtonState();
+            updateHUDStatus('Explanation complete.');
+          }
         } else if (msg.event === 'error') {
           queueSpeechSentence(data.sentence, data.sentenceIndex, msg.requestId);
           updateHUDStatus('Local Chatterbox audio failed; using browser speech fallback.');

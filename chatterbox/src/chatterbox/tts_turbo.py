@@ -281,6 +281,7 @@ class ChatterboxTurboTTS:
         temperature=0.8,
         top_k=1000,
         norm_loudness=True,
+        n_cfm_timesteps=4,
     ):
         if audio_prompt_path:
             self.prepare_conditionals(audio_prompt_path, exaggeration=exaggeration, norm_loudness=norm_loudness)
@@ -313,7 +314,7 @@ class ChatterboxTurboTTS:
         wav, _ = self.s3gen.inference(
             speech_tokens=speech_tokens,
             ref_dict=self.conds.gen,
-            n_cfm_timesteps=2,
+            n_cfm_timesteps=n_cfm_timesteps,
         )
         wav = wav.squeeze(0).detach().cpu().numpy()
         watermarked_wav = self.watermarker.apply_watermark(wav, sample_rate=self.sr)

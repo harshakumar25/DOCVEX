@@ -40,10 +40,10 @@ const isFalseBoundary = (text, punctuationIndex) => {
 
 /**
  * SentenceBuffer accumulates stream tokens and splits them into clean, speech-friendly sentences.
- * Clamps all utterances to a maximum length (default 160 chars) to eliminate Chrome's speech synthesis cutoff bug.
+ * Clamps overly long run-on sentences to a natural maximum length (default 360 chars) at clause boundaries.
  */
 export class SentenceBuffer {
-  constructor({ onSentence, minSentenceLength = 10, maxUtteranceLength = 160 }) {
+  constructor({ onSentence, minSentenceLength = 10, maxUtteranceLength = 360 }) {
     this.buffer = '';
     this.onSentence = onSentence;
     this.minSentenceLength = minSentenceLength;

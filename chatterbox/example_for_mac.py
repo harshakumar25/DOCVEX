@@ -17,17 +17,11 @@ torch.load = patched_torch_load
 model = ChatterboxTTS.from_pretrained(device=device)
 text = "Today is the day. I want to move like a titan at dawn, sweat like a god forging lightning. No more excuses. From now on, my mornings will be temples of discipline. I am going to work out like the gods… every damn day."
 
-from pathlib import Path
-
-# If you want to synthesize with a different voice, specify an existing audio prompt
-AUDIO_PROMPT_PATH = "YOUR_FILE.wav"
-prompt_path = AUDIO_PROMPT_PATH if Path(AUDIO_PROMPT_PATH).exists() else None
-
+# If you want to synthesize with a different voice, specify the audio prompt
 wav = model.generate(
-    text, 
-    audio_prompt_path=prompt_path,
+    text,
     exaggeration=2.0,
-    cfg_weight=0.5
-    )
-ta.save("test-mac.wav", wav, model.sr)
-print("Saved synthesized audio to test-mac.wav!")
+    cfg_weight=0.5,
+)
+
+ta.save("test-2.wav", wav, model.sr)

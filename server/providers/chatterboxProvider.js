@@ -19,9 +19,10 @@ export class ChatterboxProvider {
     model,
     device = 'auto',
     tempDir,
+    voicePrompt = '',
     startupTimeoutMs = 120000,
     requestTimeoutMs = 120000,
-    maxQueue = 2,
+    maxQueue = 30,
     spawnFn = spawn,
   }) {
     if (!pythonPath || !workerPath || !model || !tempDir) {
@@ -36,6 +37,7 @@ export class ChatterboxProvider {
     this.model = model;
     this.device = device;
     this.tempDir = path.resolve(tempDir);
+    this.voicePrompt = voicePrompt ? path.resolve(voicePrompt) : '';
     this.startupTimeoutMs = startupTimeoutMs;
     this.requestTimeoutMs = requestTimeoutMs;
     this.maxQueue = maxQueue;
@@ -54,7 +56,7 @@ export class ChatterboxProvider {
 
     this.inputClosed = false;
     this.readyPromise = new Promise((resolve, reject) => {
-      const child = this.spawnFn(this.pythonPath, [
+      const args = [
         this.workerPath,
         '--model',
         this.model,
@@ -62,7 +64,11 @@ export class ChatterboxProvider {
         this.device,
         '--temp-dir',
         this.tempDir,
-      ], { stdio: ['pipe', 'pipe', 'pipe'] });
+      ];
+      if (this.voicePrompt) {
+        args.push('--voice-prompt', this.voicePrompt);
+      }
+      const child = this.spawnFn(this.pythonPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
       this.child = child;
 
       let settled = false;
@@ -156,6 +162,13 @@ export class ChatterboxProvider {
       } catch (error) {
         job.reject(error);
       }
+      this.pump();
+      return;
+    }
+
+    if (message.type === 'cancelled') {
+      this.jobsById.delete(message.id);
+      if (this.activeJob === job) this.activeJob = null;
       this.pump();
       return;
     }

@@ -17,3 +17,4 @@ npm-debug.log*
 scratch/
 tmp/
 .docvex-audio/
+.brave-profile/

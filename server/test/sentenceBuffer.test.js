@@ -57,3 +57,18 @@ test('SentenceBuffer handles multiple sentences emitted in a single large chunk'
   assert.equal(emitted[1], 'Sentence two follows it!');
   assert.equal(emitted[2], 'And sentence three?');
 });
+
+test('SentenceBuffer preserves natural complete sentences up to default 360 chars without chopping', () => {
+  const emitted = [];
+  const buffer = new SentenceBuffer({
+    onSentence: (s) => emitted.push(s),
+  });
+
+  const naturalSentence =
+    'Kubernetes manages your containerized applications across a cluster by continuously comparing desired state against actual state and self-healing when containers fail. ';
+  assert.ok(naturalSentence.length > 160 && naturalSentence.length < 360);
+
+  buffer.addToken(naturalSentence);
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0], naturalSentence.trim());
+});

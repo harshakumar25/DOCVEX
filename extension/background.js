@@ -234,42 +234,19 @@ chrome.runtime.onConnect.addListener((port) => {
               try {
                 const parsed = JSON.parse(dataStr);
                 if (event === 'audio_ready' && parsed.fileName) {
-                  fetch(`${BACKEND_URL}/audio/${encodeURIComponent(parsed.fileName)}`, {
-                    headers: {
-                      Accept: 'audio/wav',
-                      'X-DocVex-Extension-Origin': EXTENSION_ORIGIN,
-                    },
-                    signal: abortController.signal,
-                  })
-                    .then((audioResponse) => {
-                      if (!audioResponse.ok) {
-                        throw new Error(`Audio request failed (${audioResponse.status})`);
-                      }
-                      return audioResponse.arrayBuffer();
-                    })
-                    .then((audioBuffer) => {
-                      sendRuntimeMessage({
-                        action: 'PLAY_AUDIO',
-                        requestId,
-                        ...parsed,
-                        audioBuffer,
-                      }).catch((error) => {
-                        safePostMessage({
-                          action: 'AUDIO_ERROR',
-                          requestId,
-                          data: { ...parsed, error: error.message },
-                        });
-                      });
-                    })
-                    .catch((error) => {
-                      if (error.name !== 'AbortError') {
-                        safePostMessage({
-                          action: 'AUDIO_ERROR',
-                          requestId,
-                          data: { ...parsed, error: error.message },
-                        });
-                      }
+                  console.log(`[DocVex BG] audio_ready received for ${parsed.fileName}, dispatching PLAY_AUDIO to offscreen...`);
+                  sendRuntimeMessage({
+                    action: 'PLAY_AUDIO',
+                    requestId,
+                    ...parsed,
+                  }).catch((error) => {
+                    console.error('[DocVex BG] sendRuntimeMessage PLAY_AUDIO error:', error);
+                    safePostMessage({
+                      action: 'AUDIO_ERROR',
+                      requestId,
+                      data: { ...parsed, error: error.message },
                     });
+                  });
                 } else {
                   safePostMessage({
                     action: 'STREAM_EVENT',

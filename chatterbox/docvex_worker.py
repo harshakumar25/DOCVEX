@@ -48,16 +48,73 @@ def choose_device(requested: str) -> str:
     return "cpu"
 
 
-def load_model(model_name: str, device: str) -> Any:
+def post_process_waveform(waveform: torch.Tensor, sr: int, target_peak_db: float = -1.5) -> torch.Tensor:
+    """Normalize peak volume to avoid digital clipping and apply gentle micro-fade at edges."""
+    if waveform.numel() == 0:
+        return waveform
+
+    # Peak normalization with headroom
+    peak = torch.max(torch.abs(waveform)).item()
+    if peak > 1e-4:
+        target_linear = 10.0 ** (target_peak_db / 20.0)
+        waveform = waveform * (target_linear / peak)
+
+    # Soft clamp
+    waveform = torch.clamp(waveform, -0.98, 0.98)
+
+    # Hann micro-fade-in/fade-out (5ms) to prevent audio pop/click at chunk boundaries
+    fade_len = min(int(sr * 0.005), waveform.shape[-1] // 4)
+    if fade_len > 1:
+        hann_window = torch.hann_window(
+            fade_len * 2,
+            device=waveform.device,
+            dtype=waveform.dtype,
+            periodic=False,
+        )
+        fade_in = hann_window[:fade_len]
+        fade_out = hann_window[fade_len:]
+        waveform = waveform.clone()
+        waveform[..., :fade_len] = waveform[..., :fade_len] * fade_in
+        waveform[..., -fade_len:] = waveform[..., -fade_len:] * fade_out
+
+    return waveform
+
+
+def load_model(model_name: str, device: str, voice_prompt_path: Path | None = None) -> Any:
     if model_name == "standard":
         from chatterbox.tts import ChatterboxTTS
 
-        return ChatterboxTTS.from_pretrained(device=device)
-    if model_name in {"turbo", "nano"}:
+        model = ChatterboxTTS.from_pretrained(device=device)
+    elif model_name in {"turbo", "nano"}:
         from chatterbox.tts_turbo import ChatterboxTurboTTS
 
-        return ChatterboxTurboTTS.from_pretrained(device=device, nano=model_name == "nano")
-    raise ValueError(f"Unsupported Chatterbox model: {model_name}")
+        model = ChatterboxTurboTTS.from_pretrained(device=device, nano=model_name == "nano")
+    else:
+        raise ValueError(f"Unsupported Chatterbox model: {model_name}")
+
+    # Prepare reference voice conditioning if voice prompt is provided or bundled
+    ref_voice = voice_prompt_path
+    if ref_voice is None:
+        voices_dir = CHECKOUT_ROOT / "voices"
+        # Prefer the highest-quality reference in order
+        for candidate in (
+            "studio_male_voiceover.wav",
+            "human_male_narrator.wav",
+            "teacher_daniel.wav",
+        ):
+            candidate_path = voices_dir / candidate
+            if candidate_path.exists():
+                ref_voice = candidate_path
+                break
+
+    if ref_voice is not None and Path(ref_voice).exists():
+        try:
+            with contextlib.redirect_stdout(sys.stderr):
+                model.prepare_conditionals(str(ref_voice))
+        except Exception as exc:
+            sys.stderr.write(f"[Chatterbox Worker] Warning: failed to prepare reference voice {ref_voice}: {exc}\\n")
+
+    return model
 
 
 class ChatterboxWorker:
@@ -99,12 +156,17 @@ class ChatterboxWorker:
 
             with torch.inference_mode():
                 with contextlib.redirect_stdout(sys.stderr):
-                    waveform = self.model.generate(request["text"].strip())
+                    waveform = self.model.generate(
+                        request["text"].strip(),
+                        n_cfm_timesteps=4,
+                    )
 
             if self.is_cancelled(request_id):
                 return
             if waveform.ndim != 2 or waveform.shape[0] != 1:
                 raise RuntimeError(f"Unexpected waveform shape: {tuple(waveform.shape)}")
+
+            waveform = post_process_waveform(waveform, self.model.sr)
 
             filename = f"{request_id}-{uuid.uuid4().hex}.wav"
             output_path = self.temp_dir / filename
@@ -172,14 +234,14 @@ def validate_request(message: Any) -> tuple[str, dict[str, Any] | None, str | No
     return request_id, None, "Unsupported worker message type."
 
 
-def run_worker(model_name: str, device: str, temp_dir: Path) -> None:
+def run_worker(model_name: str, device: str, temp_dir: Path, voice_prompt: Path | None = None) -> None:
     output_lock = threading.Lock()
     worker = ChatterboxWorker(model_name, device, temp_dir)
 
     try:
         load_started = time.perf_counter()
         with contextlib.redirect_stdout(sys.stderr):
-            worker.model = load_model(model_name, device)
+            worker.model = load_model(model_name, device, voice_prompt_path=voice_prompt)
         write_message(
             {
                 "type": "ready",
@@ -244,8 +306,9 @@ def main() -> None:
     parser.add_argument("--model", choices=MODEL_NAMES, required=True)
     parser.add_argument("--device", choices=("auto", "cpu", "mps", "cuda"), default="auto")
     parser.add_argument("--temp-dir", type=Path, default=Path(tempfile.gettempdir()) / "docvex-chatterbox")
+    parser.add_argument("--voice-prompt", type=Path, default=None)
     args = parser.parse_args()
-    run_worker(args.model, choose_device(args.device), args.temp_dir)
+    run_worker(args.model, choose_device(args.device), args.temp_dir, voice_prompt=args.voice_prompt)
 
 
 if __name__ == "__main__":

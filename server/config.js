@@ -52,10 +52,11 @@ export const config = Object.freeze({
   CHATTERBOX_MODEL: (process.env.CHATTERBOX_MODEL || '').trim(),
   CHATTERBOX_DEVICE: (process.env.CHATTERBOX_DEVICE || 'auto').trim(),
   CHATTERBOX_TEMP_DIR: process.env.CHATTERBOX_TEMP_DIR || path.resolve(process.cwd(), '.docvex-audio'),
+  CHATTERBOX_VOICE_PROMPT: (process.env.CHATTERBOX_VOICE_PROMPT || '').trim(),
   EXTENSION_ORIGIN: (process.env.EXTENSION_ORIGIN || '').trim(),
   CHATTERBOX_STARTUP_TIMEOUT_MS: parsePositiveInteger(process.env.CHATTERBOX_STARTUP_TIMEOUT_MS, 120000),
   CHATTERBOX_REQUEST_TIMEOUT_MS: parsePositiveInteger(process.env.CHATTERBOX_REQUEST_TIMEOUT_MS, 120000),
-  CHATTERBOX_MAX_QUEUE: parsePositiveInteger(process.env.CHATTERBOX_MAX_QUEUE, 2),
+  CHATTERBOX_MAX_QUEUE: parsePositiveInteger(process.env.CHATTERBOX_MAX_QUEUE, 30),
 });
 
 export const helpers = {

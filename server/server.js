@@ -183,10 +183,14 @@ export const createServer = (options = {}) => {
         return sendJson(res, 404, { error: 'Local Chatterbox audio is disabled.' }, req);
       }
       const origin = req.headers.origin || req.headers['x-docvex-extension-origin'] || '';
-      if (!serverConfig.EXTENSION_ORIGIN) {
+      const allowedOrigins = (serverConfig.EXTENSION_ORIGIN || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (allowedOrigins.length === 0) {
         return sendJson(res, 503, { error: 'EXTENSION_ORIGIN must be configured before local audio is served.' }, req);
       }
-      if (origin !== serverConfig.EXTENSION_ORIGIN || !origin.startsWith('chrome-extension://')) {
+      if (!allowedOrigins.includes(origin) || !origin.startsWith('chrome-extension://')) {
         return sendJson(res, 403, { error: 'Audio is available only to the configured DocVex extension origin.' }, req);
       }
 
