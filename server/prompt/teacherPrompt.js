@@ -82,9 +82,15 @@ export function buildTeachingPrompt({ selectedText, pageUrl, pageTitle, evidence
         .join('\n\n')
     : '(no verified evidence retrieved for this request — explain from general knowledge only)';
 
-  const trimmed = (selectedText || '').trim();
-  const isGreeting = /^(hi+|hello+|hey+|yo+|what'?s\s*up|greetings|hola)\b/i.test(trimmed) && trimmed.length < 25;
-  const isCodeOrDsa = /\b(class|public|private|static|void|int|function|def|return|for|while|if|else|vector|TreeNode|ListNode|dp|arr|nums)\b|[{}\[\];]|->|=>/.test(trimmed) || /algorithm|complexity|sorted|binary search|pointer|tree|graph|hash/i.test(trimmed);
+  // Cap input at 4000 chars to keep Groq first-token latency under 600ms for any selection size
+  const MAX_TEACH_CHARS = 4000;
+  const rawText = (selectedText || '').trim();
+  const textForPrompt = rawText.length > MAX_TEACH_CHARS
+    ? rawText.slice(0, MAX_TEACH_CHARS) + '\n[...text truncated for response speed...]'
+    : rawText;
+
+  const isGreeting = /^(hi+|hello+|hey+|yo+|what'?s\s*up|greetings|hola)\b/i.test(rawText) && rawText.length < 25;
+  const isCodeOrDsa = /\b(class|public|private|static|void|int|function|def|return|for|while|if|else|vector|TreeNode|ListNode|dp|arr|nums)\b|[{}\[\];]|->|=>/.test(rawText) || /algorithm|complexity|sorted|binary search|pointer|tree|graph|hash/i.test(rawText);
 
   let direction = 'Explain the selected text to the student now.';
   if (isGreeting) {
@@ -95,7 +101,7 @@ export function buildTeachingPrompt({ selectedText, pageUrl, pageTitle, evidence
 
   const userPrompt = `Selected text (from ${pageTitle || 'a webpage'}${pageUrl ? `, ${pageUrl}` : ''}):
 """
-${selectedText}
+${textForPrompt}
 """
 
 Retrieved reference material:

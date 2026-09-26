@@ -15,6 +15,8 @@ export const generateExplanation = async ({
       systemPrompt,
       host: options.OLLAMA_HOST,
       model: options.OLLAMA_MODEL,
+      timeoutMs: options.OLLAMA_TIMEOUT_MS,
+      maxTokens: options.OLLAMA_MAX_TOKENS,
       fetchFn: options.fetchFn,
     });
   }
@@ -50,6 +52,8 @@ export const streamExplanation = async ({
       systemPrompt,
       host: options.OLLAMA_HOST,
       model: options.OLLAMA_MODEL,
+      timeoutMs: options.OLLAMA_TIMEOUT_MS,
+      maxTokens: options.OLLAMA_MAX_TOKENS,
       signal,
       onToken,
       fetchFn: options.fetchFn,

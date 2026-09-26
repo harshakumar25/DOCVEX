@@ -20,8 +20,25 @@ Structure your response into exactly three sections with these markdown headers:
 
 Be direct, technically rigorous, and avoid conversational filler.`;
 
+/**
+ * Maximum characters of selected text sent to Ollama reasoning.
+ * Keeps qwen3 chain-of-thought proportional to a fixed budget regardless of how
+ * much text the user selected. Head + tail strategy preserves opening context and
+ * conclusion while dropping middle bulk.
+ */
+const MAX_REASONING_CHARS = 1200;
+
+function truncateForReasoning(text) {
+  const t = text.trim();
+  if (t.length <= MAX_REASONING_CHARS) return t;
+  const head = t.slice(0, 700);
+  const tail = t.slice(-500);
+  return `${head}\n[... truncated ...]\n${tail}`;
+}
+
 export function buildReasoningPrompt({ selectedText, pageTitle = '', evidence = [] }) {
-  let prompt = `Selected Technical Passage:\n"""\n${selectedText.trim()}\n"""\n`;
+  const passageText = truncateForReasoning(selectedText || '');
+  let prompt = `Selected Technical Passage:\n"""\n${passageText}\n"""\n`;
 
   if (pageTitle) {
     prompt += `\nContext / Document Title: ${pageTitle.trim()}\n`;
@@ -31,7 +48,8 @@ export function buildReasoningPrompt({ selectedText, pageTitle = '', evidence = 
     prompt += `\nAuthoritative Reference Material:\n<evidence>\n`;
     for (const ref of evidence) {
       if (ref.content) {
-        prompt += `Source: ${ref.domain || ref.title || 'Official Docs'}\n${ref.content.slice(0, 1000)}\n---\n`;
+        // Cap per-source evidence at 500 chars to keep total context tight
+        prompt += `Source: ${ref.domain || ref.title || 'Official Docs'}\n${ref.content.slice(0, 500)}\n---\n`;
       }
     }
     prompt += `</evidence>\n`;

@@ -6,6 +6,7 @@ export const callOllama = async ({
   host = 'http://127.0.0.1:11434',
   model = 'qwen3:4b',
   timeoutMs = 60000,
+  maxTokens = null,
   fetchFn = fetch,
 }) => {
   const cleanHost = host.replace(/\/+$/, '');
@@ -27,6 +28,10 @@ export const callOllama = async ({
           { role: 'user', content: prompt },
         ],
         stream: false,
+        think: false,
+        options: {
+          ...(maxTokens ? { num_predict: maxTokens } : {}),
+        },
       }),
       signal: controller.signal,
     });
@@ -52,7 +57,15 @@ export const callOllama = async ({
     }
 
     const data = await response.json();
-    const explanation = data?.message?.content?.trim();
+    let explanation = data?.message?.content?.trim() || '';
+    if (explanation.includes('</think>')) {
+      explanation = explanation.split('</think>').pop().trim();
+    } else {
+      explanation = explanation.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    }
+    if (!explanation && data?.message?.thinking) {
+      explanation = data.message.thinking.trim();
+    }
 
     if (!explanation) {
       const error = new Error('Ollama returned an empty response.');
@@ -90,6 +103,7 @@ export const streamOllama = async ({
   host = 'http://127.0.0.1:11434',
   model = 'qwen3:4b',
   timeoutMs = 60000,
+  maxTokens = null,
   signal,
   onToken,
   fetchFn = fetch,
@@ -117,6 +131,11 @@ export const streamOllama = async ({
           { role: 'user', content: prompt },
         ],
         stream: true,
+        options: {
+          // Suppress qwen3 chain-of-thought thinking
+          think: false,
+          ...(maxTokens ? { num_predict: maxTokens } : {}),
+        },
       }),
       signal: controller.signal,
     });

@@ -1157,6 +1157,7 @@
 
         if (event === 'metadata') {
           chatterboxEnabled = Boolean(data.chatterbox?.enabled);
+          updateHUDStatus('🎓 Analyzing concepts…');
           if (data.groundingStatus) {
             updateHUDBadge(data.groundingStatus);
           }
@@ -1171,6 +1172,7 @@
             timingMetrics.t4 = performance.now();
             const latencyT4 = Math.round(timingMetrics.t4 - timingMetrics.t0);
             console.log(`[DocVex Timing] First Token (T0->T4): ${latencyT4}ms`);
+            updateHUDStatus('✍️ Explaining…');
           }
 
           accumulatedText += data.token;
@@ -1180,6 +1182,9 @@
         } else if (event === 'speech_done') {
           // Voice explanation stream finished; flush speech buffer so all sentences play cleanly
           sentenceBuffer.flush();
+          if (!isSpeaking) {
+            updateHUDStatus(chatterboxEnabled ? '🎙️ Synthesizing voice with Chatterbox…' : '🔊 Speaking explanation…');
+          }
           if (data.explanation) {
             currentSpeechText = data.explanation;
             updateHUDExplanation(data.explanation);
@@ -1226,10 +1231,16 @@
             updateHUDStatus('🎙️ Synthesizing voice with Chatterbox…');
           }
         } else if (event === 'error') {
-          renderHUDSkeleton({
-            status: 'Error',
-            error: data.error || 'Server error occurred during streaming.',
-          });
+          // Groq overloaded / rate-limited \u2014 show a recoverable status, not a red error
+          const isOverload = data.statusCode === 503 || data.statusCode === 429;
+          if (isOverload) {
+            updateHUDStatus('⚡ Groq overloaded \u2014 switching to Ollama fallback…');
+          } else {
+            renderHUDSkeleton({
+              status: 'Error',
+              error: data.error || 'Server error occurred during streaming.',
+            });
+          }
         }
       } else if (msg.action === 'AUDIO_PLAYBACK') {
         const data = msg.data || {};
