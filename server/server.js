@@ -367,6 +367,16 @@ export const createServer = (options = {}) => {
 // Start the server directly if executed as main
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const server = createServer();
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n❌ Error: Port ${config.PORT} is already in use.`);
+      console.error(`A previous DocVex server or another process is running on http://${config.HOST}:${config.PORT}.\n`);
+      console.error(`To free port ${config.PORT}, run:\n  lsof -ti:${config.PORT} | xargs kill -9\n`);
+      process.exit(1);
+    } else {
+      throw err;
+    }
+  });
   server.listen(config.PORT, config.HOST, () => {
     console.log(`DocVex server listening on http://${config.HOST}:${config.PORT}`);
   });
