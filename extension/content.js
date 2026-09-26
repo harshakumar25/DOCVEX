@@ -26,7 +26,7 @@
   let activePort = null;
   let activeUtterances = [];
   let speechKeepAliveInterval = null;
-  let chatterboxEnabled = false;
+  let chatterboxEnabled = true;
   let activeAudio = null;
   let chatterboxAudioQueue = [];
   let isChatterboxPlaying = false;
@@ -120,7 +120,7 @@
 
   // --- SentenceBuffer Class ---
   class ClientSentenceBuffer {
-    constructor({ onSentence, minSentenceLength = 10, maxUtteranceLength = 360 }) {
+    constructor({ onSentence, minSentenceLength = 4, maxUtteranceLength = 360 }) {
       this.buffer = '';
       this.onSentence = onSentence;
       this.minSentenceLength = minSentenceLength;
@@ -218,6 +218,9 @@
   // --- HUD DOM Management ---
   function getOrCreateHUD() {
     if (hudContainer && shadowRoot) {
+      if (!hudContainer.isConnected && document.body) {
+        document.body.appendChild(hudContainer);
+      }
       return { hudContainer, shadowRoot };
     }
 
@@ -313,6 +316,29 @@
       @keyframes pulse {
         0%, 100% { transform: scale(1); opacity: 1; }
         50% { transform: scale(1.5); opacity: 0.5; }
+      }
+      .hud-equalizer {
+        display: none;
+        align-items: flex-end;
+        gap: 2.5px;
+        height: 12px;
+        margin-left: auto;
+      }
+      .hud-equalizer.active {
+        display: inline-flex;
+      }
+      .eq-bar {
+        width: 3px;
+        background: #38bdf8;
+        border-radius: 2px;
+        animation: docvex-eq 0.8s ease-in-out infinite alternate;
+      }
+      .eq-bar:nth-child(1) { height: 4px; animation-delay: 0s; }
+      .eq-bar:nth-child(2) { height: 11px; animation-delay: 0.2s; }
+      .eq-bar:nth-child(3) { height: 6px; animation-delay: 0.4s; }
+      @keyframes docvex-eq {
+        0% { height: 3px; }
+        100% { height: 12px; }
       }
       .hud-content {
         max-height: 240px;
@@ -484,6 +510,14 @@
         playBtn.textContent = '▶ Play';
       }
     }
+    const eq = shadowRoot.querySelector('#docvex-hud-eq');
+    if (eq) {
+      if (isSpeaking && !isPaused) {
+        eq.classList.add('active');
+      } else {
+        eq.classList.remove('active');
+      }
+    }
   }
 
   function updateHUDBadge(groundingStatus) {
@@ -558,6 +592,17 @@
 
     statusRow.appendChild(pulseSpan);
     statusRow.appendChild(statusTextSpan);
+
+    const eqDiv = document.createElement('div');
+    eqDiv.className = 'hud-equalizer';
+    eqDiv.id = 'docvex-hud-eq';
+    for (let i = 0; i < 3; i++) {
+      const bar = document.createElement('span');
+      bar.className = 'eq-bar';
+      eqDiv.appendChild(bar);
+    }
+    statusRow.appendChild(eqDiv);
+
     existingCard.appendChild(statusRow);
 
     // 3. Error message (if any)
@@ -701,33 +746,50 @@
     sourcesDiv.style.display = 'block';
   }
 
-  // Filter out harsh, robotic novelty voices and prioritize warm, natural human voices
+  // Filter out harsh, robotic novelty voices and female voices to ensure a male technical narrator voice
   const NOVELTY_OR_ROBOTIC_VOICE_NAMES = new Set([
-    'albert', 'alex', 'bad news', 'bahh', 'bells', 'boing', 'bubbles',
-    'cellos', 'deranged', 'fred', 'good news', 'hysterical', 'jester',
-    'organ', 'superstar', 'trinoids', 'whisper', 'wobble', 'zarvox', 'junior', 'ralph'
+    'albert', 'bad news', 'bahh', 'bells', 'boing', 'bubbles',
+    'cellos', 'deranged', 'good news', 'hysterical', 'jester',
+    'organ', 'superstar', 'trinoids', 'whisper', 'wobble', 'zarvox', 'junior', 'ralph',
+    'fred', 'grandpa'
   ]);
 
-  const PREFERRED_VOICE_NAMES = [
-    'samantha', 'ava', 'daniel', 'oliver', 'serena', 'karen', 'moira', 'tessa',
-    'natural', 'neural', 'premium', 'enhanced', 'google', 'siri'
+  const FEMALE_VOICE_NAMES = new Set([
+    'samantha', 'ava', 'serena', 'karen', 'moira', 'tessa', 'victoria', 'fiona',
+    'allison', 'susan', 'veena', 'yuri', 'kyoko', 'amelie', 'anna', 'carmit',
+    'damayanti', 'ellen', 'ioana', 'joana', 'kanya', 'katya', 'luciana', 'mariska',
+    'meijia', 'melina', 'milena', 'monica', 'nora', 'paulina', 'satu', 'sinji',
+    'tingting', 'yelda', 'yuna', 'zosia', 'zuzana', 'flo', 'grandma', 'kathy',
+    'sandy', 'shelley', 'tara', 'alice', 'alva', 'amira', 'daria', 'female'
+  ]);
+
+  const PREFERRED_MALE_VOICE_NAMES = [
+    'daniel', 'oliver', 'rishi', 'eddy', 'reed', 'rocko', 'aman', 'aaron', 'george', 'alex', 'arthur', 'tom',
+    'male', 'natural', 'neural', 'premium', 'enhanced', 'google'
   ];
 
   function selectBestSpeechVoice(voices) {
     if (!voices || voices.length === 0) return null;
-    const qualityVoices = voices.filter((v) => {
+    const nonFemaleVoices = voices.filter((v) => {
       const lowerName = (v.name || '').toLowerCase();
-      return !Array.from(NOVELTY_OR_ROBOTIC_VOICE_NAMES).some((bad) => lowerName === bad || lowerName.startsWith(`${bad} `) || lowerName.includes(` ${bad}`));
+      const isRobotic = Array.from(NOVELTY_OR_ROBOTIC_VOICE_NAMES).some((bad) => lowerName === bad || lowerName.includes(bad));
+      const isFemale = Array.from(FEMALE_VOICE_NAMES).some((fem) => lowerName === fem || lowerName.startsWith(`${fem} `) || lowerName.includes(` ${fem}`));
+      return !isRobotic && !isFemale;
     });
-    if (qualityVoices.length === 0) return null;
 
-    const englishVoices = qualityVoices.filter((v) => v.lang && v.lang.startsWith('en'));
-    const candidatePool = englishVoices.length > 0 ? englishVoices : qualityVoices;
-    for (const preferred of PREFERRED_VOICE_NAMES) {
-      const match = candidatePool.find((v) => (v.name || '').toLowerCase().includes(preferred));
+    const candidatePool = nonFemaleVoices.length > 0 ? nonFemaleVoices : voices.filter((v) => {
+      const lowerName = (v.name || '').toLowerCase();
+      return !Array.from(FEMALE_VOICE_NAMES).some((fem) => lowerName === fem || lowerName.includes(fem));
+    });
+
+    const englishVoices = candidatePool.filter((v) => v.lang && v.lang.startsWith('en'));
+    const searchPool = englishVoices.length > 0 ? englishVoices : candidatePool;
+
+    for (const preferred of PREFERRED_MALE_VOICE_NAMES) {
+      const match = searchPool.find((v) => (v.name || '').toLowerCase().includes(preferred));
       if (match) return match;
     }
-    return candidatePool[0];
+    return searchPool[0] || null;
   }
 
   let cachedVoices = [];
@@ -991,7 +1053,7 @@
       activePort = null;
     }
     activeRequestId = null;
-    chatterboxEnabled = false;
+    chatterboxEnabled = true;
     updatePlayButtonState();
   }
 
@@ -1005,7 +1067,16 @@
     }
     lastTriggerTime = now;
 
-    const selectedText = (selectionOverride || window.getSelection().toString()).trim();
+    let selectedText = (selectionOverride || '').trim();
+    if (!selectedText) {
+      selectedText = (window.getSelection() ? window.getSelection().toString() : '').trim();
+    }
+    if (!selectedText && document.activeElement) {
+      const el = document.activeElement;
+      if ((el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && typeof el.selectionStart === 'number') {
+        selectedText = (el.value || '').substring(el.selectionStart, el.selectionEnd).trim();
+      }
+    }
 
     if (!selectedText) {
       renderHUDSkeleton({
@@ -1039,7 +1110,7 @@
 
     // 3. Initialize SentenceBuffer for this session
     const sentenceBuffer = new ClientSentenceBuffer({
-      minSentenceLength: 10,
+      minSentenceLength: 4,
       onSentence: (sentence, index) => {
         if (requestId !== activeRequestId) return;
 
@@ -1289,7 +1360,7 @@
     setTimeout(() => {
       const selection = window.getSelection();
       const text = (selection ? selection.toString() : '').trim();
-      if (!text || text.length < 5) {
+      if (!text || text.length < 2) {
         removeFloatingBtn();
         return;
       }

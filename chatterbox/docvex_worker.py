@@ -154,11 +154,15 @@ class ChatterboxWorker:
                 self.emit_error(request_id, "Request was cancelled before synthesis.", "CANCELLED")
                 return
 
+            generate_kwargs: dict[str, Any] = {}
+            if self.model_name in {"turbo", "nano"}:
+                generate_kwargs["n_cfm_timesteps"] = 4
+
             with torch.inference_mode():
                 with contextlib.redirect_stdout(sys.stderr):
                     waveform = self.model.generate(
                         request["text"].strip(),
-                        n_cfm_timesteps=4,
+                        **generate_kwargs,
                     )
 
             if self.is_cancelled(request_id):
@@ -196,6 +200,10 @@ class ChatterboxWorker:
         finally:
             with self.cancel_lock:
                 self.cancelled.discard(request_id)
+            if self.device == "mps" and hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                torch.mps.empty_cache()
+            elif self.device == "cuda" and hasattr(torch, "cuda") and hasattr(torch.cuda, "empty_cache"):
+                torch.cuda.empty_cache()
 
     def run(self) -> None:
         while not self.stopping.is_set():

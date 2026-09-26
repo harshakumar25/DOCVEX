@@ -13,8 +13,8 @@ const applyOriginSecurity = (req, res) => {
   }
   if (origin.startsWith('chrome-extension://')) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-DocVex-Extension-Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-DocVex-Extension-Origin, Accept');
     return true;
   }
   return false;
@@ -190,7 +190,14 @@ export const createServer = (options = {}) => {
       if (allowedOrigins.length === 0) {
         return sendJson(res, 503, { error: 'EXTENSION_ORIGIN must be configured before local audio is served.' }, req);
       }
-      if (!allowedOrigins.includes(origin) || !origin.startsWith('chrome-extension://')) {
+      const isAllowed =
+        (origin.startsWith('chrome-extension://') &&
+          (allowedOrigins.includes(origin) || allowedOrigins.includes('*'))) ||
+        origin.startsWith('http://127.0.0.1:') ||
+        origin.startsWith('http://localhost:');
+
+      if (!isAllowed) {
+        console.warn(`[DocVex Audio 403] Origin rejected: "${origin}". Allowed origins:`, allowedOrigins);
         return sendJson(res, 403, { error: 'Audio is available only to the configured DocVex extension origin.' }, req);
       }
 
@@ -205,6 +212,10 @@ export const createServer = (options = {}) => {
         audioStream.once('close', () => {
           provider.cleanupAudio(fileName).catch(() => {});
         });
+
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-DocVex-Extension-Origin, Accept');
         res.writeHead(200, {
           'Content-Type': 'audio/wav',
           'Cache-Control': 'no-store',
@@ -264,7 +275,9 @@ export const createServer = (options = {}) => {
 
       if (isStream) {
         req.on('close', () => {
-          currentController.abort();
+          if (!res.writableEnded) {
+            currentController.abort();
+          }
           clearActiveController();
         });
 

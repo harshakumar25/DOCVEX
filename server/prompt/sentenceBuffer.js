@@ -43,7 +43,7 @@ const isFalseBoundary = (text, punctuationIndex) => {
  * Clamps overly long run-on sentences to a natural maximum length (default 360 chars) at clause boundaries.
  */
 export class SentenceBuffer {
-  constructor({ onSentence, minSentenceLength = 10, maxUtteranceLength = 360 }) {
+  constructor({ onSentence, minSentenceLength = 4, maxUtteranceLength = 360 }) {
     this.buffer = '';
     this.onSentence = onSentence;
     this.minSentenceLength = minSentenceLength;

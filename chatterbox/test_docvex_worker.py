@@ -13,7 +13,7 @@ from docvex_worker import ChatterboxWorker, validate_request
 class FakeModel:
     sr = 24000
 
-    def generate(self, _text):
+    def generate(self, _text, *args, **kwargs):
         time.sleep(0.02)
         return torch.zeros(1, self.sr // 10)
 

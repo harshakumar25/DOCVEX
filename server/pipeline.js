@@ -30,7 +30,7 @@ export const getChatterboxProvider = (options) => {
 
 const isMeaningfulTeachingSentence = (sentence) => {
   const normalized = sentence.trim().toLowerCase();
-  if (normalized.length < 15) return false;
+  if (normalized.length < 8) return false;
   // Filter out pure assistant pleasantries like "Sure, I can help you with that."
   if (/^(sure[,.]?|okay[,.]?|certainly[,.]?|of course[,.]?|absolutely[,.]?)\s*(i can|here is your|i'll explain)/.test(normalized)) {
     return false;
@@ -89,18 +89,25 @@ export const teachPipeline = async (
       signal: options.signal,
     });
 
-    const reasoningPrompt = buildReasoningPrompt({
-      selectedText: text,
-      pageTitle: title,
-      evidence: references,
-    });
-    const ollamaPromise = generateExplanation({
-      prompt: reasoningPrompt,
-      systemPrompt: OLLAMA_REASONING_SYSTEM_PROMPT,
-      provider: 'ollama',
-      options,
-      signal: options.signal,
-    }).catch(() => null);
+    const isSubstantialTechnicalText =
+      (text || '').trim().length >= 25 &&
+      !/^(hi+|hello+|hey+|yo+|what'?s\s*up|greetings|hola)\b/i.test((text || '').trim());
+
+    let ollamaPromise = Promise.resolve(null);
+    if (isSubstantialTechnicalText) {
+      const reasoningPrompt = buildReasoningPrompt({
+        selectedText: text,
+        pageTitle: title,
+        evidence: references,
+      });
+      ollamaPromise = generateExplanation({
+        prompt: reasoningPrompt,
+        systemPrompt: OLLAMA_REASONING_SYSTEM_PROMPT,
+        provider: 'ollama',
+        options,
+        signal: options.signal,
+      }).catch(() => null);
+    }
 
     const [groqResult, ollamaResult] = await Promise.all([groqPromise, ollamaPromise]);
     const speechFriendly = shapeSpeechText(groqResult.explanation);
@@ -210,7 +217,7 @@ export const streamTeachPipeline = async (
 
   const sentenceBuffer = chatterbox
     ? new SentenceBuffer({
-        minSentenceLength: 10,
+        minSentenceLength: 4,
         onSentence: (sentence, sentenceIndex) => {
           if (!isMeaningfulTeachingSentence(sentence)) return;
           const speechText = normalizeSpeechText(sentence);
@@ -233,6 +240,9 @@ export const streamTeachPipeline = async (
               return audio;
             })
             .catch((error) => {
+              if (signal?.aborted || error.code === 'CHATTERBOX_CANCELLED' || error.name === 'AbortError') {
+                return null;
+              }
               console.error('[DocVex Pipeline Audio Error]', error);
               if (typeof onAudioError === 'function') {
                 onAudioError({
@@ -250,9 +260,12 @@ export const streamTeachPipeline = async (
       })
     : null;
 
-  // In hybrid mode, dispatch background deep-dive reasoning with Ollama concurrently
+  // In hybrid mode, dispatch background deep-dive reasoning with Ollama concurrently (skip for trivial greetings)
   let ollamaPromise = null;
-  if (isHybrid) {
+  const isSubstantialTechnicalText =
+    (text || '').trim().length >= 25 &&
+    !/^(hi+|hello+|hey+|yo+|what'?s\s*up|greetings|hola)\b/i.test((text || '').trim());
+  if (isHybrid && isSubstantialTechnicalText) {
     const reasoningPrompt = buildReasoningPrompt({
       selectedText: text,
       pageTitle: title,
