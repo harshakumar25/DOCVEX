@@ -16,6 +16,13 @@
   if (window.__DOCVEX_INITIALIZED__) return;
   window.__DOCVEX_INITIALIZED__ = true;
 
+  // --- Debug logging helper (gated by chrome.storage docvexDebug flag) ---
+  let _debugEnabled = false;
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    chrome.storage.local.get(['docvexDebug'], (r) => { _debugEnabled = Boolean(r?.docvexDebug); });
+  }
+  const dbg = (...args) => { if (_debugEnabled) console.log(...args); };
+
   // --- State Variables ---
   let hudContainer = null;
   let shadowRoot = null;
@@ -292,6 +299,10 @@
         this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         this.hasMicPermission = true;
         console.log('[Docy Voice] Microphone access granted! 🎙️');
+        // Persist mic permission so popup and future loads reflect it
+        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+          chrome.storage.local.set({ docvexMicEnabled: true });
+        }
         this._updateMicButton(true);
         this._initVAD(this.micStream);
         return true;
@@ -376,7 +387,7 @@
         if (avg > 38) {
           consecutiveSpikes++;
           if (consecutiveSpikes >= 2) { // sustained for ~160ms
-            console.log('[Docy VAD] Voice activity detected via microphone (level:', Math.round(avg), '). Pausing DocVex.');
+            dbg('[Docy VAD] Voice activity detected via microphone (level:', Math.round(avg), '). Pausing DocVex.');
             consecutiveSpikes = 0;
             this._wake('voice activity');
           }
@@ -410,7 +421,7 @@
           const last = event.results[event.results.length - 1];
           const transcript = (last[0].transcript || '').trim();
           if (!transcript) return;
-          console.log('[Docy Voice Heard]', transcript);
+          dbg('[Docy Voice Heard]', transcript);
 
           if (!this.interrupted) {
             if (this._isSelfEcho(transcript)) return;
@@ -429,7 +440,12 @@
             // User is speaking a question, thought, or doubt while paused!
             this.lastSpokenText = transcript;
             const preview = transcript.length > 36 ? transcript.slice(0, 33) + '…' : transcript;
-            this._startCountdown(6, preview);
+            // If it sounds like a complete question, offer quick-answer mode
+            if (this._looksLikeQuestion(transcript)) {
+              this._askFollowUp(transcript);
+            } else {
+              this._startCountdown(6, preview);
+            }
           }
         };
 
@@ -504,6 +520,35 @@
     /** Resume if currently interrupted (called by manual resume button too). */
     forceResume() {
       if (this.interrupted) this._resume();
+    }
+
+    /** Returns true if transcript looks like a standalone question worth answering. */
+    _looksLikeQuestion(transcript) {
+      const t = transcript.trim();
+      if (t.length < 6) return false;
+      // Explicit question markers
+      if (/[?]/.test(t)) return true;
+      if (/^(what|why|how|when|where|who|which|can you|could you|explain|tell me|is there|are there|difference between|what is|what are)/i.test(t)) return true;
+      // Hindi question starters
+      if (/^(kya|kyun|kaise|kaun|batao|samjhao|explain karo)/i.test(t)) return true;
+      return false;
+    }
+
+    /**
+     * Convert the user's spoken follow-up question into a new teaching session.
+     * Resumes state properly and calls triggerTeaching with the transcript.
+     */
+    _askFollowUp(transcript) {
+      const question = transcript.trim();
+      if (!question) return;
+      this.interrupted = false;
+      this.lastSpokenText = '';
+      this._clearTimers();
+      updateHUDStatus(`🎙️ Got it! Answering: "${question.slice(0, 40)}${question.length > 40 ? '…' : ''}"`);
+      // Small delay so user sees the status message
+      setTimeout(() => {
+        triggerTeaching(question);
+      }, 400);
     }
 
     _wake(triggerTranscript = '') {
@@ -1364,13 +1409,15 @@
   }
 
   function pauseSpeech() {
-    if (chatterboxEnabled && activePort) {
+    // Offscreen chatterbox path: only post PAUSE_AUDIO if chatterbox audio is actively streaming
+    if (chatterboxEnabled && activePort && isChatterboxPlaying) {
       activePort.postMessage({ action: 'PAUSE_AUDIO' });
       isPaused = true;
       updatePlayButtonState();
       updateHUDStatus('⏸ Audio paused');
       return;
     }
+    // Local chatterbox path (audio element in content script)
     if (activeAudio && isChatterboxPlaying) {
       activeAudio.pause();
       isPaused = true;
@@ -1378,6 +1425,7 @@
       updateHUDStatus('⏸ Audio paused');
       return;
     }
+    // Browser SpeechSynthesis path
     if (window.speechSynthesis && window.speechSynthesis.speaking) {
       window.speechSynthesis.pause();
       isPaused = true;
@@ -1387,7 +1435,7 @@
   }
 
   function resumeSpeech() {
-    if (chatterboxEnabled && activePort && isPaused) {
+    if (chatterboxEnabled && activePort && isPaused && isChatterboxPlaying) {
       activePort.postMessage({ action: 'RESUME_AUDIO' });
       isPaused = false;
       updatePlayButtonState();
@@ -1429,14 +1477,16 @@
 
   function startSpeechQueueFromText(fullText) {
     stopSpeech();
-    const sentences = fullText.match(/[^.!?]+[.!?]+(\s|$)/g) || [fullText];
     const currentReq = activeRequestId || 'local_replay';
-    sentences.forEach((s, idx) => {
-      const cleaned = shapeSpeechText(s);
-      if (cleaned) {
-        queueSpeechSentence(cleaned, idx + 1, currentReq);
-      }
+    // Use ClientSentenceBuffer for correct false-boundary-safe sentence splitting
+    const replayBuffer = new ClientSentenceBuffer({
+      minSentenceLength: 4,
+      onSentence: (sentence, index) => {
+        queueSpeechSentence(sentence, index, currentReq);
+      },
     });
+    replayBuffer.addToken(fullText);
+    replayBuffer.flush();
   }
 
   function stopCurrentTeachingSession() {

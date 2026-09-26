@@ -181,3 +181,49 @@ test('Docy Voice Interrupt: speech activity dynamically resets countdown and tra
   handleSpeechResult('theek hai');
   assert.equal(interrupted, false);
 });
+
+// Mirror of _looksLikeQuestion from content.js for unit testing
+const looksLikeQuestion = (transcript) => {
+  const t = transcript.trim();
+  if (t.length < 6) return false;
+  if (/[?]/.test(t)) return true;
+  if (/^(what|why|how|when|where|who|which|can you|could you|explain|tell me|is there|are there|difference between|what is|what are)/i.test(t)) return true;
+  if (/^(kya|kyun|kaise|kaun|batao|samjhao|explain karo)/i.test(t)) return true;
+  return false;
+};
+
+test('Docy Quick-Answer: _looksLikeQuestion identifies question transcripts correctly', () => {
+  const questions = [
+    'what is the event loop?',
+    'why does this happen',
+    'how does async await work',
+    'explain closures to me',
+    'what are promises',
+    'difference between let and const',
+    'can you tell me about garbage collection',
+    'could you explain this',
+    'is there a better way?',
+    'kya yeh sahi hai',
+    'kyun error aa raha hai',
+    'batao this works how',
+  ];
+
+  for (const q of questions) {
+    assert.ok(looksLikeQuestion(q), `Expected "${q}" to be recognized as a question`);
+  }
+});
+
+test('Docy Quick-Answer: _looksLikeQuestion rejects non-question phrases', () => {
+  const nonQuestions = [
+    'ok',
+    'fine',
+    'ya',
+    'hmm interesting',
+    'i see',
+    'got it',
+  ];
+
+  for (const phrase of nonQuestions) {
+    assert.ok(!looksLikeQuestion(phrase), `Expected "${phrase}" NOT to be recognized as a question`);
+  }
+});

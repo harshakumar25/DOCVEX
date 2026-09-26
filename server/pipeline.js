@@ -273,15 +273,15 @@ export const streamTeachPipeline = async (
       pageTitle: title,
       evidence: references,
     });
-    // Hard caps: 25s timeout + 512 output tokens to prevent qwen3 from running indefinitely
+    // Hard caps: configurable timeout + max tokens to prevent qwen3 from running indefinitely
     ollamaPromise = generateExplanation({
       prompt: reasoningPrompt,
       systemPrompt: OLLAMA_REASONING_SYSTEM_PROMPT,
       provider: 'ollama',
       options: {
         ...options,
-        OLLAMA_TIMEOUT_MS: 25000,
-        OLLAMA_MAX_TOKENS: 512,
+        OLLAMA_TIMEOUT_MS: options.OLLAMA_BACKGROUND_TIMEOUT_MS || 25000,
+        OLLAMA_MAX_TOKENS: options.OLLAMA_BACKGROUND_MAX_TOKENS || 512,
       },
       signal,
     }).catch(() => null);

@@ -144,6 +144,106 @@
     .refresh-btn:hover {
       background: #4338ca;
     }
+    .port-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .port-label {
+      font-size: 11px;
+      color: #94a3b8;
+      white-space: nowrap;
+    }
+    .port-input {
+      flex: 1;
+      background: #0f172a;
+      color: #f8fafc;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      padding: 5px 8px;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+      width: 70px;
+    }
+    .port-input:focus {
+      border-color: #6366f1;
+    }
+    .port-save-btn {
+      background: #1e293b;
+      color: #94a3b8;
+      border: 1px solid #334155;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+    .port-save-btn:hover {
+      background: #334155;
+      color: #e2e8f0;
+    }
+    .port-save-btn.saved {
+      color: #4ade80;
+      border-color: #166534;
+    }
+    .indicator-mic {
+      color: #34d399;
+    }
+    .indicator-mic-off {
+      color: #94a3b8;
+    }
+    .debug-toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #334155;
+    }
+    .debug-label {
+      font-size: 11px;
+      color: #64748b;
+    }
+    .toggle-switch {
+      position: relative;
+      width: 32px;
+      height: 18px;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: #334155;
+      border-radius: 18px;
+      transition: background 0.2s;
+    }
+    .toggle-slider::before {
+      content: "";
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      left: 3px;
+      top: 3px;
+      background: #94a3b8;
+      border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .toggle-switch input:checked + .toggle-slider {
+      background: #1e1b4b;
+    }
+    .toggle-switch input:checked + .toggle-slider::before {
+      transform: translateX(14px);
+      background: #818cf8;
+    }
   </style>
 </head>
 <body>
@@ -164,6 +264,11 @@
     <div id="provider-hint" class="provider-hint">
       ⚡ Instant speech in ~595ms with Groq + Ollama computes deep-dive gotchas in background!
     </div>
+    <div class="port-row">
+      <span class="port-label">Backend port:</span>
+      <input id="port-input" class="port-input" type="number" min="1" max="65535" value="3000" title="DocVex server port" />
+      <button id="port-save-btn" class="port-save-btn">Save</button>
+    </div>
   </div>
 
   <div class="shortcut-box">
@@ -173,7 +278,7 @@
 
   <div class="status-card">
     <div class="status-item">
-      <span class="status-label">Backend (Port 3000):</span>
+      <span class="status-label" id="backend-port-label">Backend (Port 3000):</span>
       <span id="backend-status" class="status-val">Checking...</span>
     </div>
     <div class="status-item">
@@ -187,6 +292,17 @@
     <div class="status-item">
       <span class="status-label">Active Local Model:</span>
       <span id="model-status" class="status-val">Checking...</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">🎙️ Docy Voice:</span>
+      <span id="docy-mic-status" class="status-val indicator-mic-off">Not enabled</span>
+    </div>
+    <div class="debug-toggle-row">
+      <span class="debug-label">🛠️ Debug logging</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="debug-toggle" />
+        <span class="toggle-slider"></span>
+      </label>
     </div>
   </div>
 
