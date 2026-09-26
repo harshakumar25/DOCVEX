@@ -218,7 +218,7 @@ export const streamTeachPipeline = async (
   const sentenceBuffer = chatterbox
     ? new SentenceBuffer({
         minSentenceLength: 4,
-        onSentence: (sentence, sentenceIndex) => {
+        onSentence: (sentence, sentenceIndex, pauseAfterMs = 0) => {
           if (!isMeaningfulTeachingSentence(sentence)) return;
           const speechText = normalizeSpeechText(sentence);
           const audioPromise = chatterbox
@@ -230,6 +230,7 @@ export const streamTeachPipeline = async (
                   sentence,
                   sentenceIndex,
                   speechText,
+                  pauseAfterMs,
                   fileName: audio.fileName,
                   sampleRate: audio.sampleRate,
                   durationSeconds: audio.durationSeconds,

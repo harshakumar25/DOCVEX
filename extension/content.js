@@ -73,8 +73,8 @@
     // Remove citation formatting [Source 1], [1], [link](url)
     spoken = spoken.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
     spoken = spoken.replace(/\[(?:Source\s*)?\d+[^\]]*\]/gi, '');
-    // Convert list bullets at start of line into natural pauses
-    spoken = spoken.replace(/^[\*\-]\s+/gm, 'Also, ');
+    // Strip list bullets cleanly (same as server shapeSpeechText)
+    spoken = spoken.replace(/^[\*\-]\s+/gm, '');
     // Normalize spaces and line breaks
     spoken = spoken.replace(/[ \t]+/g, ' ');
     spoken = spoken.replace(/\n\s*\n+/g, ' ');
@@ -118,6 +118,13 @@
     return false;
   }
 
+  // Classify the gap after a sentence split: paragraph break = 1000ms, normal = 0ms
+  function classifyPause(text, punctEndIndex) {
+    const remainder = text.slice(punctEndIndex);
+    if (/^\s*\n\s*\n/.test(remainder)) return 1000;
+    return 0;
+  }
+
   // --- SentenceBuffer Class ---
   class ClientSentenceBuffer {
     constructor({ onSentence, minSentenceLength = 4, maxUtteranceLength = 360 }) {
@@ -134,13 +141,13 @@
       this.process();
     }
 
-    emitClamped(candidate) {
+    emitClamped(candidate, pauseAfterMs = 0) {
       const cleaned = shapeSpeechText(candidate);
       if (!cleaned || cleaned.length < this.minSentenceLength) return;
 
       if (cleaned.length <= this.maxUtteranceLength) {
         this.sentenceIndex++;
-        this.onSentence(cleaned, this.sentenceIndex);
+        this.onSentence(cleaned, this.sentenceIndex, pauseAfterMs);
         return;
       }
 
@@ -162,14 +169,14 @@
         const part = remaining.slice(0, splitAt).trim();
         if (part.length > 0) {
           this.sentenceIndex++;
-          this.onSentence(part, this.sentenceIndex);
+          this.onSentence(part, this.sentenceIndex, 0);
         }
         remaining = remaining.slice(splitAt).trim();
       }
 
       if (remaining.length >= this.minSentenceLength) {
         this.sentenceIndex++;
-        this.onSentence(remaining, this.sentenceIndex);
+        this.onSentence(remaining, this.sentenceIndex, pauseAfterMs);
       }
     }
 
@@ -194,7 +201,8 @@
         const candidate = this.buffer.slice(0, splitIndex).trim();
 
         if (candidate.length >= this.minSentenceLength) {
-          this.emitClamped(candidate);
+          const pauseAfterMs = classifyPause(this.buffer, punctIndex + punctLength);
+          this.emitClamped(candidate, pauseAfterMs);
           this.buffer = this.buffer.slice(splitIndex);
           boundaryRegex.lastIndex = 0;
         }
