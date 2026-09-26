@@ -39,8 +39,21 @@ const isFalseBoundary = (text, punctuationIndex) => {
 };
 
 /**
+ * Classifies the gap after a sentence boundary.
+ * Returns pauseAfterMs = 1000 if a paragraph break (double newline) immediately follows the boundary,
+ * 0 for a normal intra-paragraph continuation.
+ */
+const classifyPause = (text, punctEndIndex) => {
+  const remainder = text.slice(punctEndIndex);
+  // Double newline (paragraph break) before any non-whitespace text -> 1000ms (1 sec) pause
+  if (/^\s*\n\s*\n/.test(remainder)) return 1000;
+  return 0;
+};
+
+/**
  * SentenceBuffer accumulates stream tokens and splits them into clean, speech-friendly sentences.
  * Clamps overly long run-on sentences to a natural maximum length (default 360 chars) at clause boundaries.
+ * Each emitted sentence includes a `pauseAfterMs` hint: 0 = continue immediately, 700 = paragraph break.
  */
 export class SentenceBuffer {
   constructor({ onSentence, minSentenceLength = 4, maxUtteranceLength = 360 }) {
@@ -57,17 +70,18 @@ export class SentenceBuffer {
     this.process();
   }
 
-  emitClamped(candidate) {
+  emitClamped(candidate, pauseAfterMs = 0) {
     const cleaned = shapeSpeechText(candidate);
     if (!cleaned || cleaned.length < this.minSentenceLength) return;
 
     if (cleaned.length <= this.maxUtteranceLength) {
       this.sentenceIndex++;
-      this.onSentence(cleaned, this.sentenceIndex);
+      this.onSentence(cleaned, this.sentenceIndex, pauseAfterMs);
       return;
     }
 
     // Candidate exceeds maxUtteranceLength: split at clause boundary or last space
+    // Inner chunks have 0 pause; only last chunk carries the original pauseAfterMs
     let remaining = cleaned;
     while (remaining.length > this.maxUtteranceLength) {
       const slice = remaining.slice(0, this.maxUtteranceLength);
@@ -86,14 +100,14 @@ export class SentenceBuffer {
       const part = remaining.slice(0, splitAt).trim();
       if (part.length > 0) {
         this.sentenceIndex++;
-        this.onSentence(part, this.sentenceIndex);
+        this.onSentence(part, this.sentenceIndex, 0);
       }
       remaining = remaining.slice(splitAt).trim();
     }
 
     if (remaining.length >= this.minSentenceLength) {
       this.sentenceIndex++;
-      this.onSentence(remaining, this.sentenceIndex);
+      this.onSentence(remaining, this.sentenceIndex, pauseAfterMs);
     }
   }
 
@@ -122,7 +136,9 @@ export class SentenceBuffer {
 
       // Only emit if candidate meets minimum length threshold
       if (candidate.length >= this.minSentenceLength) {
-        this.emitClamped(candidate);
+        // Classify pause BEFORE slicing the buffer so we can inspect the following text
+        const pauseAfterMs = classifyPause(this.buffer, punctIndex + punctLength);
+        this.emitClamped(candidate, pauseAfterMs);
         this.buffer = this.buffer.slice(splitIndex);
         boundaryRegex.lastIndex = 0;
       }

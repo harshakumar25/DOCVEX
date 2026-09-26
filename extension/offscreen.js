@@ -2,6 +2,9 @@ let activeRequestId = null;
 const queue = [];
 let active = null;
 let activeAudio = null;
+let pauseTimer = null;
+// Prefetch cache: sentenceIndex -> { objectUrl, promise }
+const prefetchCache = new Map();
 
 const send = (message) => {
   try {
@@ -14,28 +17,24 @@ const send = (message) => {
 
 const BACKEND_URL = 'http://127.0.0.1:3000';
 
-const playNext = async () => {
-  if (activeAudio || queue.length === 0) return;
-  active = queue.shift();
-  if (!active || (activeRequestId && active.requestId !== activeRequestId)) {
-    playNext();
-    return;
-  }
+/**
+ * Fetch audio for an item and return a blob objectURL.
+ * Stores the result in prefetchCache keyed by sentenceIndex so subsequent calls resolve instantly.
+ */
+const prefetchAudio = (item) => {
+  const key = `${item.requestId}-${item.sentenceIndex}`;
+  if (prefetchCache.has(key)) return prefetchCache.get(key);
 
-  const current = active;
-  console.log(`[DocVex Offscreen] Starting audio playback for sentence ${current.sentenceIndex}: "${current.sentence?.slice(0, 50)}..."`);
-
-  let objectUrl = null;
-  try {
-    if (current.audioBuffer instanceof Blob) {
-      objectUrl = URL.createObjectURL(current.audioBuffer);
-    } else if (current.audioBuffer instanceof ArrayBuffer) {
-      objectUrl = URL.createObjectURL(new Blob([current.audioBuffer], { type: 'audio/wav' }));
-    } else if (current.audioBuffer && current.audioBuffer.buffer instanceof ArrayBuffer) {
-      objectUrl = URL.createObjectURL(new Blob([current.audioBuffer.buffer], { type: 'audio/wav' }));
-    } else if (current.fileName) {
+  const promise = (async () => {
+    if (item.audioBuffer instanceof Blob) {
+      return URL.createObjectURL(item.audioBuffer);
+    } else if (item.audioBuffer instanceof ArrayBuffer) {
+      return URL.createObjectURL(new Blob([item.audioBuffer], { type: 'audio/wav' }));
+    } else if (item.audioBuffer && item.audioBuffer.buffer instanceof ArrayBuffer) {
+      return URL.createObjectURL(new Blob([item.audioBuffer.buffer], { type: 'audio/wav' }));
+    } else if (item.fileName) {
       const extOrigin = chrome.runtime.getURL('').replace(/\/+$/, '');
-      const response = await fetch(`${BACKEND_URL}/audio/${encodeURIComponent(current.fileName)}`, {
+      const response = await fetch(`${BACKEND_URL}/audio/${encodeURIComponent(item.fileName)}`, {
         headers: {
           Accept: 'audio/wav',
           'X-DocVex-Extension-Origin': extOrigin,
@@ -45,11 +44,55 @@ const playNext = async () => {
         throw new Error(`Failed to fetch audio from backend (${response.status})`);
       }
       const blob = await response.blob();
-      console.log(`[DocVex Offscreen] Audio fetched successfully (${blob.size} bytes, type ${blob.type})`);
-      objectUrl = URL.createObjectURL(blob);
+      console.log(`[DocVex Offscreen] Prefetch done for sentence ${item.sentenceIndex} (${blob.size} bytes)`);
+      return URL.createObjectURL(blob);
     } else {
       throw new Error('No valid audio data or fileName provided');
     }
+  })();
+
+  prefetchCache.set(key, promise);
+  return promise;
+};
+
+/** Revoke and remove a prefetch entry */
+const releasePrefetch = (item) => {
+  const key = `${item.requestId}-${item.sentenceIndex}`;
+  prefetchCache.delete(key);
+};
+
+/** Kick off prefetch for the next item in the queue without awaiting. */
+const prefetchNext = () => {
+  if (queue.length === 0) return;
+  const next = queue[0];
+  if (next && (!activeRequestId || next.requestId === activeRequestId)) {
+    prefetchAudio(next).catch(() => {});
+  }
+};
+
+const playNext = async () => {
+  if (pauseTimer) {
+    clearTimeout(pauseTimer);
+    pauseTimer = null;
+  }
+  if (activeAudio || queue.length === 0) return;
+  active = queue.shift();
+  if (!active || (activeRequestId && active.requestId !== activeRequestId)) {
+    releasePrefetch(active);
+    playNext();
+    return;
+  }
+
+  const current = active;
+  console.log(`[DocVex Offscreen] Playing sentence ${current.sentenceIndex}: "${current.sentence?.slice(0, 50)}..."`);
+
+  // Kick off prefetch for the next item immediately
+  prefetchNext();
+
+  let objectUrl = null;
+  try {
+    objectUrl = await prefetchAudio(current);
+    releasePrefetch(current);
   } catch (err) {
     console.error(`[DocVex Offscreen] Audio preparation error:`, err);
     send({
@@ -88,7 +131,20 @@ const playNext = async () => {
       sentenceIndex: current.sentenceIndex,
       hasMore: queue.length > 0,
     });
-    playNext();
+
+    // Smart gap: paragraph break = 1000ms pause, intra-paragraph = play immediately
+    const pauseMs = (event === 'ended' && typeof current.pauseAfterMs === 'number')
+      ? current.pauseAfterMs
+      : 0;
+
+    if (pauseMs > 0) {
+      pauseTimer = setTimeout(() => {
+        pauseTimer = null;
+        playNext();
+      }, pauseMs);
+    } else {
+      playNext();
+    }
   };
 
   audio.onplay = () => {
@@ -96,7 +152,7 @@ const playNext = async () => {
       finish('stale');
       return;
     }
-    console.log(`[DocVex Offscreen] Audio onplay event fired for sentence ${current.sentenceIndex}!`);
+    console.log(`[DocVex Offscreen] Audio onplay for sentence ${current.sentenceIndex}`);
     send({
       event: 'started',
       requestId: current.requestId,
@@ -130,10 +186,26 @@ chrome.runtime.onMessage.addListener((message) => {
       return;
     }
     queue.push(message);
-    playNext();
+    // Prefetch this item immediately if idle, otherwise it'll be prefetched when current finishes
+    if (!activeAudio) {
+      playNext();
+    } else {
+      // Current audio is playing — start prefetching the newly arrived item if it's next
+      prefetchNext();
+    }
     return;
   }
   if (message.action === 'SET_ACTIVE_REQUEST') {
+    if (pauseTimer) {
+      clearTimeout(pauseTimer);
+      pauseTimer = null;
+    }
+    // Clear prefetch cache for old request
+    for (const key of prefetchCache.keys()) {
+      if (!key.startsWith(message.requestId)) {
+        prefetchCache.delete(key);
+      }
+    }
     queue.length = 0;
     if (activeAudio) {
       activeAudio.pause();
@@ -146,10 +218,23 @@ chrome.runtime.onMessage.addListener((message) => {
     return;
   }
   if (message.action === 'PAUSE_AUDIO') {
+    if (pauseTimer) {
+      clearTimeout(pauseTimer);
+      pauseTimer = null;
+    }
     activeAudio?.pause();
   } else if (message.action === 'RESUME_AUDIO') {
-    activeAudio?.play().catch(() => {});
+    if (activeAudio) {
+      activeAudio.play().catch(() => {});
+    } else if (queue.length > 0) {
+      playNext();
+    }
   } else if (message.action === 'STOP_AUDIO') {
+    if (pauseTimer) {
+      clearTimeout(pauseTimer);
+      pauseTimer = null;
+    }
+    prefetchCache.clear();
     queue.length = 0;
     if (activeAudio) {
       activeAudio.pause();

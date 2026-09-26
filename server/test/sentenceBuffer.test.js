@@ -72,3 +72,34 @@ test('SentenceBuffer preserves natural complete sentences up to default 360 char
   assert.equal(emitted.length, 1);
   assert.equal(emitted[0], naturalSentence.trim());
 });
+
+test('SentenceBuffer emits pauseAfterMs=0 for intra-paragraph sentences', () => {
+  const emitted = [];
+  const buffer = new SentenceBuffer({
+    onSentence: (s, idx, pauseAfterMs) => emitted.push({ s, pauseAfterMs }),
+  });
+
+  // Two sentences separated by a single space — no paragraph break
+  buffer.addToken('First sentence here. Second sentence follows. ');
+
+  assert.equal(emitted.length, 2);
+  assert.equal(emitted[0].pauseAfterMs, 0);
+  assert.equal(emitted[1].pauseAfterMs, 0);
+});
+
+test('SentenceBuffer emits pauseAfterMs=1000 when paragraph break follows sentence', () => {
+  const emitted = [];
+  const buffer = new SentenceBuffer({
+    onSentence: (s, idx, pauseAfterMs) => emitted.push({ s, pauseAfterMs }),
+  });
+
+  // Sentence followed by a double newline (paragraph break), then a second sentence
+  buffer.addToken('End of paragraph one.\n\nStart of paragraph two. ');
+
+  assert.equal(emitted.length, 2);
+  // First sentence has a paragraph break after it (1 sec pause)
+  assert.equal(emitted[0].pauseAfterMs, 1000);
+  // Second sentence has no break after it (0ms pause)
+  assert.equal(emitted[1].pauseAfterMs, 0);
+});
+
