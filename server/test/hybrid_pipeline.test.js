@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { teachPipeline, streamTeachPipeline } from '../pipeline.js';
 import { validateTeachInput } from '../server.js';
 import { helpers } from '../config.js';
+import { buildReasoningPrompt } from '../prompt/reasoningPrompt.js';
+import { buildTeachingPrompt } from '../prompt/teacherPrompt.js';
 
 test('validateTeachInput accepts hybrid provider', () => {
   const res = validateTeachInput({ text: 'Test code explanation', provider: 'hybrid' });
@@ -96,6 +98,9 @@ test('streamTeachPipeline in hybrid mode coordinates voice streaming and backgro
     }
   );
 
+  // Since onInsights fires asynchronously after onDone (fire-and-forget), wait for it
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
   // 1. Metadata emitted with isHybrid flag
   assert.equal(metadataEvents.length, 1);
   assert.equal(metadataEvents[0].isHybrid, true);
@@ -108,14 +113,13 @@ test('streamTeachPipeline in hybrid mode coordinates voice streaming and backgro
   assert.equal(speechReadyEvents.length, 1);
   assert.equal(speechReadyEvents[0].explanation, 'This is Groq voice.');
 
-  // 4. Background insights received from Ollama
+  // 4. Background insights received from Ollama (async, arrives after done)
   assert.equal(insightsEvents.length, 1);
   assert.ok(insightsEvents[0].insights.includes('Mental Model'));
 
-  // 5. Done event contains both explanation and insights
+  // 5. Done fires immediately after Groq — insights no longer bundled in done
   assert.ok(doneData);
   assert.equal(doneData.explanation, 'This is Groq voice.');
-  assert.ok(doneData.insights.includes('Mental Model'));
   assert.equal(result.provider, 'hybrid');
 });
 
@@ -186,9 +190,10 @@ test('streamTeachPipeline in hybrid mode gracefully succeeds if Ollama is offlin
   // Groq speech still succeeded completely
   assert.deepEqual(tokens, ['Resilient ', 'audio.']);
   assert.equal(speechReadyEvents.length, 1);
-  // Insights skipped gracefully with no uncaught errors
+  // Insights skipped gracefully with no uncaught errors; onInsights never fired
   assert.equal(insightsEvents.length, 0);
-  assert.equal(doneData.insights, null);
+  // onDone no longer includes insights — it fires immediately after Groq completes
+  assert.equal(doneData.insights, undefined);
   assert.equal(result.explanation, 'Resilient audio.');
 });
 
@@ -293,4 +298,114 @@ test('streamTeachPipeline sends meaningful sentences through the optional Chatte
   assert.equal(audioEvents[0].model, 'test-nano');
   assert.match(audioEvents[0].speechText, /Kubernetes/);
   assert.ok(audioEvents.every((event) => !event.error));
+});
+
+test('buildReasoningPrompt caps input text and evidence to prevent Ollama CoT hang on large text', () => {
+  const hugeText = 'A'.repeat(5000);
+  const prompt = buildReasoningPrompt({
+    selectedText: hugeText,
+    pageTitle: 'Test Page',
+    evidence: [{ domain: 'docs.test', content: 'E'.repeat(2000) }],
+  });
+
+  // Must truncate with head + tail marker
+  assert.ok(prompt.includes('[... truncated ...]'));
+  // Must cap evidence to 500 chars per source
+  assert.ok(!prompt.includes('E'.repeat(600)));
+  // The selected technical passage portion should be significantly smaller than 5000 chars
+  const passageMatch = prompt.match(/Selected Technical Passage:\n"""\n([\s\S]*?)\n"""/);
+  assert.ok(passageMatch);
+  assert.ok(passageMatch[1].length < 1300);
+});
+
+test('buildTeachingPrompt caps selectedText at MAX_TEACH_CHARS for fast Groq streaming', () => {
+  const hugeText = 'B'.repeat(8000);
+  const prompt = buildTeachingPrompt({
+    selectedText: hugeText,
+    pageUrl: 'https://example.com',
+    pageTitle: 'Example',
+    evidence: [],
+  });
+
+  assert.ok(prompt.userPrompt.includes('[...text truncated for response speed...]'));
+  assert.ok(!prompt.userPrompt.includes('B'.repeat(5000)));
+});
+
+test('streamTeachPipeline fires onDone immediately without waiting for slow Ollama background task', async () => {
+  let ollamaResolved = false;
+  let onDoneFired = false;
+  let onDoneFiredBeforeOllama = false;
+
+  const mockFetch = async (url) => {
+    const urlStr = String(url);
+    if (urlStr.includes('groq.com')) {
+      const chunks = [
+        'data: {"choices":[{"delta":{"content":"Groq fast response."}}]}\n\n',
+        'data: [DONE]\n\n',
+      ];
+      let i = 0;
+      return {
+        ok: true,
+        status: 200,
+        body: new ReadableStream({
+          pull(controller) {
+            if (i < chunks.length) controller.enqueue(new TextEncoder().encode(chunks[i++]));
+            else controller.close();
+          },
+        }),
+      };
+    }
+
+    if (urlStr.includes('11434')) {
+      // Simulate slow Ollama (e.g. 150ms delay)
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      ollamaResolved = true;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          message: { content: '### 🧠 Mental Model\nSlow background insight.' },
+        }),
+      };
+    }
+
+    return { ok: true, status: 200 };
+  };
+
+  const insightsEvents = [];
+
+  await streamTeachPipeline(
+    {
+      text: 'Technical text with enough characters to trigger Ollama background reasoning.',
+      provider: 'hybrid',
+      requestId: 'test_slow_ollama',
+    },
+    {
+      options: {
+        GROQ_API_KEY: 'test-key',
+        fetchFn: mockFetch,
+        retrieveVerifiedReferences: async () => [],
+      },
+      onToken: () => {},
+      onDone: () => {
+        onDoneFired = true;
+        if (!ollamaResolved) {
+          onDoneFiredBeforeOllama = true;
+        }
+      },
+      onInsights: (data) => {
+        insightsEvents.push(data);
+      },
+    }
+  );
+
+  // onDone must have fired while Ollama was still in progress
+  assert.equal(onDoneFired, true);
+  assert.equal(onDoneFiredBeforeOllama, true);
+
+  // Wait for the background Ollama to complete
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.equal(ollamaResolved, true);
+  assert.equal(insightsEvents.length, 1);
+  assert.ok(insightsEvents[0].insights.includes('Slow background insight'));
 });

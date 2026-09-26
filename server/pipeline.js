@@ -261,7 +261,8 @@ export const streamTeachPipeline = async (
       })
     : null;
 
-  // In hybrid mode, dispatch background deep-dive reasoning with Ollama concurrently (skip for trivial greetings)
+  // In hybrid mode, dispatch background deep-dive reasoning with Ollama concurrently (skip for trivial greetings).
+  // Ollama is fire-and-forget — it must NEVER block onDone. Insights arrive later via onInsights.
   let ollamaPromise = null;
   const isSubstantialTechnicalText =
     (text || '').trim().length >= 25 &&
@@ -272,28 +273,58 @@ export const streamTeachPipeline = async (
       pageTitle: title,
       evidence: references,
     });
+    // Hard caps: 25s timeout + 512 output tokens to prevent qwen3 from running indefinitely
     ollamaPromise = generateExplanation({
       prompt: reasoningPrompt,
       systemPrompt: OLLAMA_REASONING_SYSTEM_PROMPT,
       provider: 'ollama',
-      options,
+      options: {
+        ...options,
+        OLLAMA_TIMEOUT_MS: 25000,
+        OLLAMA_MAX_TOKENS: 512,
+      },
       signal,
     }).catch(() => null);
   }
 
   try {
     // Stream voice generation tokens from voice provider (Groq in hybrid mode)
-    const modelResult = await streamExplanation({
-      prompt: userPrompt,
-      systemPrompt: TEACHER_SYSTEM_PROMPT,
-      provider: voiceProvider,
-      options,
-      signal,
-      onToken: (token) => {
-        onToken?.(token);
-        sentenceBuffer?.addToken(token);
-      },
-    });
+    let modelResult;
+    let usedVoiceProvider = voiceProvider;
+    try {
+      modelResult = await streamExplanation({
+        prompt: userPrompt,
+        systemPrompt: TEACHER_SYSTEM_PROMPT,
+        provider: voiceProvider,
+        options,
+        signal,
+        onToken: (token) => {
+          onToken?.(token);
+          sentenceBuffer?.addToken(token);
+        },
+      });
+    } catch (voiceErr) {
+      // Groq is overloaded or unavailable — fall back to Ollama for the voice stream
+      if (isHybrid && (voiceErr.statusCode === 503 || voiceErr.statusCode === 502 || voiceErr.statusCode === 504)) {
+        console.warn('[DocVex Pipeline] Groq voice provider failed, falling back to Ollama for voice stream.');
+        usedVoiceProvider = 'ollama';
+        // Cancel any pending Ollama background insights so we don't run two Ollama calls concurrently
+        ollamaPromise = null;
+        modelResult = await streamExplanation({
+          prompt: userPrompt,
+          systemPrompt: TEACHER_SYSTEM_PROMPT,
+          provider: 'ollama',
+          options,
+          signal,
+          onToken: (token) => {
+            onToken?.(token);
+            sentenceBuffer?.addToken(token);
+          },
+        });
+      } else {
+        throw voiceErr;
+      }
+    }
 
     const speechFriendly = shapeSpeechText(modelResult.explanation);
 
@@ -313,23 +344,7 @@ export const streamTeachPipeline = async (
       await Promise.allSettled(audioPromises);
     }
 
-    // Await background Ollama reasoning insights if in hybrid mode
-    let insights = null;
-    if (ollamaPromise) {
-      const ollamaResult = await ollamaPromise;
-      if (ollamaResult?.explanation) {
-        insights = ollamaResult.explanation;
-        if (typeof onInsights === 'function') {
-          onInsights({
-            requestId,
-            insights,
-            provider: 'ollama',
-            model: ollamaResult.model,
-          });
-        }
-      }
-    }
-
+    // Fire onDone immediately after voice provider — do NOT await Ollama here.
     if (typeof onDone === 'function') {
       onDone({
         requestId,
@@ -338,10 +353,25 @@ export const streamTeachPipeline = async (
         sources,
         groundingStatus,
         sourceDomains,
-        insights,
         provider: chosenProvider,
-        model: modelName,
+        model: usedVoiceProvider !== voiceProvider
+          ? `${usedVoiceProvider} (groq-fallback)`
+          : modelName,
       });
+    }
+
+    // Background: resolve Ollama and emit insights asynchronously (after SSE done)
+    if (ollamaPromise) {
+      ollamaPromise.then((ollamaResult) => {
+        if (ollamaResult?.explanation && typeof onInsights === 'function') {
+          onInsights({
+            requestId,
+            insights: ollamaResult.explanation,
+            provider: 'ollama',
+            model: ollamaResult.model,
+          });
+        }
+      }).catch(() => {});
     }
 
     return {
@@ -350,7 +380,6 @@ export const streamTeachPipeline = async (
       sources,
       groundingStatus,
       sourceDomains,
-      insights,
       provider: chosenProvider,
       model: modelName,
     };
