@@ -11,7 +11,7 @@ test('manifest.json conforms to Manifest V3 specification', () => {
   const manifest = JSON.parse(content);
 
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.name, 'DocVex — TeachMe Local');
+  assert.equal(manifest.name, 'DocVex');
   assert.ok(manifest.permissions.includes('contextMenus'));
   assert.ok(manifest.permissions.includes('activeTab'));
   assert.ok(manifest.permissions.includes('storage'));

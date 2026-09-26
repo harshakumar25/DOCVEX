@@ -981,12 +981,12 @@
     titleDiv.className = 'hud-title';
 
     const titleIcon = document.createElement('span');
-    titleIcon.textContent = '🎓 DocVex';
+    titleIcon.textContent = 'DocVex';
 
     const titleBadge = document.createElement('span');
     titleBadge.id = 'docvex-title-badge';
     titleBadge.className = 'hud-badge';
-    titleBadge.textContent = 'Local Tutor';
+    titleBadge.textContent = 'Read & Explain';
 
     titleDiv.appendChild(titleIcon);
     titleDiv.appendChild(titleBadge);
@@ -1853,7 +1853,7 @@
         floatingBtn.style.boxShadow = '0 4px 14px rgba(0,0,0,0.35)';
         floatingBtn.style.border = '1px solid #6366f1';
         floatingBtn.style.userSelect = 'none';
-        floatingBtn.textContent = '🎓 Teach me (⌃⇧S)';
+        floatingBtn.textContent = 'Explain this (⌃⇧S)';
 
         floatingBtn.onmousedown = (evt) => {
           evt.preventDefault();
