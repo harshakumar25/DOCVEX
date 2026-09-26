@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "DocVex — TeachMe Local",
+  "name": "DocVex",
   "version": "1.0.0",
-  "description": "Select any technical text, press ⌘⇧S, and listen to an intelligent, structured explanation out loud.",
+  "description": "Highlight any technical text and hear a clear spoken breakdown — runs on your own machine, no data leaves your device.",
   "permissions": [
     "activeTab",
     "scripting",
     "contextMenus",
     "storage",
-    "offscreen"
+    "offscreen",
+    "microphone"
   ],
   "host_permissions": [
     "http://127.0.0.1:3000/*",
@@ -36,11 +37,11 @@
         "default": "Ctrl+Shift+S",
         "mac": "MacCtrl+Shift+S"
       },
-      "description": "Teach me the selected text"
+      "description": "Explain selected text out loud"
     }
   },
   "action": {
-    "default_title": "DocVex Local Tutor",
+    "default_title": "DocVex — Read & Explain",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
