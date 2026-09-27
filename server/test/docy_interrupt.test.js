@@ -227,3 +227,35 @@ test('Docy Quick-Answer: _looksLikeQuestion rejects non-question phrases', () =>
     assert.ok(!looksLikeQuestion(phrase), `Expected "${phrase}" NOT to be recognized as a question`);
   }
 });
+
+// ── Follow-up prompt builder ──────────────────────────────────────────────────
+import { buildFollowUpPrompt, DOCY_FOLLOWUP_SYSTEM_PROMPT } from '../../server/prompt/teacherPrompt.js';
+
+test('buildFollowUpPrompt includes the spoken question and previous context', () => {
+  const prompt = buildFollowUpPrompt({
+    followUpQuestion: 'kya event loop ek thread pe chalta hai?',
+    previousContext: 'The event loop is the mechanism Node uses to handle async callbacks.',
+  });
+
+  assert.ok(prompt.includes('kya event loop ek thread pe chalta hai'), 'should include the question');
+  assert.ok(prompt.includes('Previous explanation context'), 'should include context section');
+  assert.ok(prompt.includes('event loop is the mechanism'), 'should include previous context text');
+});
+
+test('buildFollowUpPrompt omits context section when no previous context is given', () => {
+  const prompt = buildFollowUpPrompt({ followUpQuestion: 'what is a closure?' });
+  assert.ok(!prompt.includes('Previous explanation context'), 'should omit context section when empty');
+  assert.ok(prompt.includes('what is a closure?'), 'should still include the question');
+});
+
+test('DOCY_FOLLOWUP_SYSTEM_PROMPT uses warm tone and no lecture structure markers', () => {
+  // These words must not appear anywhere in the prompt (they signal a cold/clinical response)
+  const coldMarkers = ['In conclusion', 'Point one', 'Masterclass'];
+  for (const marker of coldMarkers) {
+    assert.ok(!DOCY_FOLLOWUP_SYSTEM_PROMPT.includes(marker), `follow-up prompt should not contain "${marker}"`);
+  }
+  // Should contain warmth and brevity indicators
+  assert.ok(DOCY_FOLLOWUP_SYSTEM_PROMPT.includes('curious'), 'should acknowledge student curiosity');
+  assert.ok(DOCY_FOLLOWUP_SYSTEM_PROMPT.includes('warm'), 'should mention warm delivery');
+  assert.ok(DOCY_FOLLOWUP_SYSTEM_PROMPT.includes('friend'), 'should describe tone as friend-like');
+});

@@ -22,6 +22,14 @@
     chrome.storage.local.get(['docvexDebug'], (r) => { _debugEnabled = Boolean(r?.docvexDebug); });
   }
   const dbg = (...args) => { if (_debugEnabled) console.log(...args); };
+  // Live-reload debug flag when user toggles it in the popup without a page reload
+  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.docvexDebug !== undefined) {
+        _debugEnabled = Boolean(changes.docvexDebug.newValue);
+      }
+    });
+  }
 
   // --- State Variables ---
   let hudContainer = null;
@@ -33,7 +41,7 @@
   let activePort = null;
   let activeUtterances = [];
   let speechKeepAliveInterval = null;
-  let chatterboxEnabled = true;
+  let chatterboxEnabled = false;
   let activeAudio = null;
   let chatterboxAudioQueue = [];
   let isChatterboxPlaying = false;
@@ -421,7 +429,17 @@
           const last = event.results[event.results.length - 1];
           const transcript = (last[0].transcript || '').trim();
           if (!transcript) return;
-          dbg('[Docy Voice Heard]', transcript);
+
+          // Always update lastSpokenText for HUD display, even on interim results
+          if (this.interrupted) {
+            this.lastSpokenText = transcript;
+          }
+
+          // Only run wake/question/countdown logic on FINAL results to avoid
+          // partial-word false triggers (e.g. "ruk" mid-word fires early)
+          if (!last.isFinal) return;
+
+          dbg('[Docy Voice Heard (final)]', transcript);
 
           if (!this.interrupted) {
             if (this._isSelfEcho(transcript)) return;
@@ -438,8 +456,7 @@
             }
 
             // User is speaking a question, thought, or doubt while paused!
-            this.lastSpokenText = transcript;
-            const preview = transcript.length > 36 ? transcript.slice(0, 33) + '…' : transcript;
+            const preview = transcript.length > 36 ? transcript.slice(0, 33) + '\u2026' : transcript;
             // If it sounds like a complete question, offer quick-answer mode
             if (this._looksLikeQuestion(transcript)) {
               this._askFollowUp(transcript);
@@ -448,6 +465,7 @@
             }
           }
         };
+
 
         this.recognition.onend = () => {
           if (this.active && !this.interrupted) {
@@ -481,7 +499,13 @@
       console.log('[Docy Voice] Starting Docy voice listener...');
 
       // 1. Ensure microphone access is active
+      const micWasAlreadyActive = this.hasMicPermission && this.micStream?.active;
       await this.ensureMicAccess();
+
+      // Restart VAD monitoring if mic was already open (not restarted by ensureMicAccess)
+      if (micWasAlreadyActive && this.analyser) {
+        this._startVADMonitoring();
+      }
 
       // 2. Start SpeechRecognition if available
       if (!this.recognition) this.init();
@@ -536,7 +560,8 @@
 
     /**
      * Convert the user's spoken follow-up question into a new teaching session.
-     * Resumes state properly and calls triggerTeaching with the transcript.
+     * Passes the current explanation as context so the server uses the warm
+     * follow-up tone and can connect the dots without starting cold.
      */
     _askFollowUp(transcript) {
       const question = transcript.trim();
@@ -544,10 +569,10 @@
       this.interrupted = false;
       this.lastSpokenText = '';
       this._clearTimers();
-      updateHUDStatus(`🎙️ Got it! Answering: "${question.slice(0, 40)}${question.length > 40 ? '…' : ''}"`);
+      updateHUDStatus(`\uD83C\uDF99\uFE0F Got it! Answering: "${question.slice(0, 40)}${question.length > 40 ? '\u2026' : ''}"`);
       // Small delay so user sees the status message
       setTimeout(() => {
-        triggerTeaching(question);
+        triggerTeaching(question, { isFollowUp: true, followUpContext: currentSpeechText });
       }, 400);
     }
 
@@ -1505,14 +1530,14 @@
       activePort = null;
     }
     activeRequestId = null;
-    chatterboxEnabled = true;
+    chatterboxEnabled = false;
     updatePlayButtonState();
   }
 
   // --- Main Teaching Flow ---
   let lastTriggerTime = 0;
 
-  function triggerTeaching(selectionOverride = null) {
+  function triggerTeaching(selectionOverride = null, followUpOpts = {}) {
     const now = performance.now();
     if (now - lastTriggerTime < 500) {
       return;
@@ -1769,6 +1794,7 @@
         url: window.location.href || '',
         pageContext: extractSurroundingContext(),
         ...(preferredProvider ? { provider: preferredProvider } : {}),
+        ...(followUpOpts.isFollowUp ? { isFollowUp: true, followUpContext: followUpOpts.followUpContext || '' } : {}),
       };
 
       activePort.postMessage({

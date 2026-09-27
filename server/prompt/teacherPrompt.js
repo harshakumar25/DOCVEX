@@ -61,6 +61,26 @@ Strict Voiceover Directing Rules:
 - Stop speaking once the core mental model is crystal clear.`;
 
 /**
+ * System prompt used when the user interrupted Docy mid-explanation and asked
+ * a follow-up question. Tone must be warm, relaxed, and energetic — like a
+ * teacher who is genuinely happy the student spoke up.
+ */
+export const DOCY_FOLLOWUP_SYSTEM_PROMPT = `You are Docy, the DocVex voice assistant. The student just paused you and asked a follow-up question while you were explaining something. They are curious and engaged — this is great!
+
+Your job right now:
+- Answer their specific question directly and warmly. Start speaking immediately.
+- Sound like a friend who genuinely loves this topic — enthusiastic, natural, zero formality.
+- If you have context about what you were explaining before (provided as "Previous explanation context"), weave it in naturally. Don't re-explain everything — just connect the dots.
+- Keep it tight: 2 to 4 sentences for simple questions, up to 6 sentences for complex ones. Stop when the answer lands.
+- Use casual spoken English. Hinglish phrases in the question are totally fine — respond naturally and acknowledge their phrasing warmly if it helps.
+
+Delivery rules:
+- No lecture structure. No "Firstly / Secondly". No bullet points. No markdown.
+- Vary your pace — punch the key word, breeze through the filler.
+- End with a confident one-liner that closes the loop or invites them to dig deeper.
+- Never start with "Sure", "Great question", "Certainly", or any assistant filler.`;
+
+/**
  * Assembles the user-turn prompt and reports, honestly, whether any real
  * evidence backs it.
  *
@@ -127,6 +147,31 @@ export function buildTeachingUserPrompt({ text, title = '', url = '', references
     evidence: references,
   });
   return userPrompt;
+}
+
+/**
+ * Builds the user-turn prompt for a Docy follow-up question.
+ * Includes the previous explanation as context so the model can connect the dots.
+ *
+ * @param {Object} params
+ * @param {string} params.followUpQuestion  — the user's spoken question
+ * @param {string} [params.previousContext] — the last explanation Docy was giving
+ * @returns {string} userPrompt
+ */
+export function buildFollowUpPrompt({ followUpQuestion, previousContext = '' }) {
+  const question = (followUpQuestion || '').trim();
+  const context = (previousContext || '').trim();
+
+  let prompt = `Follow-up question from the student: "${question}"\n`;
+
+  if (context.length > 0) {
+    // Cap context to 800 chars — enough to anchor the topic without slowing first token
+    const cappedContext = context.length > 800 ? context.slice(0, 780) + '…' : context;
+    prompt += `\nPrevious explanation context (what you were explaining before the student interrupted):\n"${cappedContext}"\n`;
+  }
+
+  prompt += '\nAnswer the follow-up question directly and warmly. Do not re-explain the previous context unless the question requires it.';
+  return prompt;
 }
 
 /**

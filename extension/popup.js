@@ -149,7 +149,20 @@ function initDebugToggle() {
 function initShortcutLabel() {
   const shortcutDisplay = document.getElementById('shortcut-display');
   if (!shortcutDisplay) return;
-  shortcutDisplay.textContent = 'Control + Shift + S';
+  // Read the actual bound shortcut from Chrome instead of hardcoding it
+  if (chrome.commands && chrome.commands.getAll) {
+    chrome.commands.getAll((commands) => {
+      const cmd = commands.find((c) => c.name === 'teach-selection');
+      if (cmd && cmd.shortcut) {
+        // Format: "Ctrl+Shift+S" → "Ctrl + Shift + S" for readability
+        shortcutDisplay.textContent = cmd.shortcut.replace(/\+/g, ' + ');
+      } else {
+        shortcutDisplay.textContent = 'Control + Shift + S';
+      }
+    });
+  } else {
+    shortcutDisplay.textContent = 'Control + Shift + S';
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
