@@ -257,29 +257,41 @@
       this.vadInterval = null;
       this.hasMicPermission = false;
       this.lastSttResultTime = 0;
+      this._pendingMicPromise = null;
+      this._sttPermissionDenied = false;
     }
 
     // Regex patterns that trigger an immediate pause
     static WAKE = [
       // Direct Docy address
       /\b(docy|doci|docvex|dokey|dhoki)\b/i,
-      // Hindi/Hinglish stop commands: ruk, ruko, ruk ja, ruk jao, ruk ja bhai, ruk ja bhyii, ruk ja yaar
-      /\b(ru+k+|roo?k+)\s*(ja+[ao]*|o+|ha)?(\s*(bha?y+i+|bha?i|bhaiya|yaar|yar|re|na))?\b/i,
+      // Hindi/Hinglish stop commands: ruk, ruko, ruk ja, ruk jao, ruk ja bhai, ruk ja bhyii, ruk ja yaar, rukh
+      /\b(ru+k+|roo?k+|ru+kh?)\s*(ja+[ao]*|o+|ha)?(\s*(bha?y+i+|bha?i|bhaiya|yaar|yar|re|na|zara|ji))?\b/i,
+      // Devanagari Hindi stop commands: रुक, रुको, रुक जा, रुक जाओ, रुकिए, रुक जा भाई, रुक जा यार
+      /(रुक(ना|ो|िए)?(\s*(जा+[ओो]*|जाइए))?(\s*(भाई|यार|रे|ना|ज़रा|जरा))?)/,
       // Hindi silence/stop commands: chup, chup ho ja, chup karo, shant, shant ho ja
-      /\b(chup(\s*(ho\s*ja|karo))?|shant(\s*(ho\s*ja|raho))?)\b/i,
-      // Hindi attention commands: sun, suno, sun bhai, sun bhyii, arey sun, arey suno, sun na
-      /\b(suno?|arey?\s*suno?|sun\s*(bha?y+i+|bha?i|na|yaar|yar)?|bha?i\s*sun)\b/i,
-      // English wait variations: wait, waitt, wait a sec, wait a second, wait for a moment, ok wait, okk wait
-      /\b(wait|waitt)(\s+(for\s+)?(a\s+)?(moment|sec|second|minute))?\b/i,
-      // English listen / hey: listen, hey docy, docy listen, listen docy, just listen
-      /\b(listen|hey\s+docy|docy\s+listen|listen\s+docy|just\s+listen)\b/i,
+      /\b(chup(\s*(ho\s*ja|karo|raho))?|shant(\s*(ho\s*ja|raho))?)\b/i,
+      // Devanagari silence: चुप, चुप हो जा, चुप रहो, शांत
+      /(चुप(\s*(हो\s*जा|रहो|करो))?|शांत(\s*(हो\s*जा|रहो))?)/,
+      // Hindi attention commands: sun, suno, sun bhai, sun bhyii, arey sun, arey suno, sun na, sun lo
+      /\b(suno?|arey?\s*suno?|sun\s*(bha?y+i+|bha?i|na|yaar|yar|lo|be)?|bha?i\s*sun)\b/i,
+      // Devanagari attention: सुन, सुनो, सुनिए, अरे सुनो, भाई सुन
+      /(सुन(ना|ो|िए)?|अरे\s*सुन(ना|ो|िए)?|भाई\s*सुन(ना|ो|िए)?)/,
+      // English wait variations: wait, waitt, wait a sec, wait a second, wait for a moment, ok wait, okk wait, okay wait
+      /\b(ok+|okay)?\s*(wait|waitt|weight)(\s+(for\s+)?(a\s+)?(moment|sec|second|minute))?\b/i,
+      // English listen / hey: listen, hey docy, docy listen, listen docy, just listen, hey wait
+      /\b(listen|hey\s+docy|docy\s+listen|listen\s+docy|just\s+listen|hey\s+wait)\b/i,
       // English pause / stop / hold commands
-      /\b(pause|stop|hold\s*on|hold\s*up)\b/i,
-      // Short-time expressions: ek sec, ek second, ek minute, ek min, just a sec, just a second
-      /\b(ek\s*(sec|second|pal|minute|min))\b/i,
+      /\b(pause|stop|hold\s*on|hold\s*up|hang\s*on|shut\s*up|be\s*quiet)\b/i,
+      // Devanagari pause/stop: रुको जरा, ठहरो
+      /(रुको\s*ज़रा|रुको\s*जरा|ठहरो)/,
+      // Short-time expressions: ek sec, ek second, ek minute, ek min, 1 sec, 1 min, just a sec
+      /\b((ek|1|one)\s*(sec|second|pal|minute|min))\b/i,
+      /(एक\s*(सेकंड|मिनट|पल)|१\s*(सेकंड|मिनट))/i,
       /\b(just\s*a\s*(sec|second|minute|moment))\b/i,
-      // Student doubt: doubt, i have a doubt
-      /\b(i\s*have\s*a\s*)?doubt\b/i,
+      // Student doubt: doubt, i have a doubt, ek doubt
+      /\b((i\s*have\s*a|ek)\s*)?doubt\b/i,
+      /(डाउट|संदेह|सवाल|प्रश्न)/,
     ];
 
     // Regex patterns that resume after a pause
@@ -289,7 +301,9 @@
       /\bjaari\b/i,
       /\btheek\s*hai\b/i,
       /\bhaan\b/i,
-      /\b(ok|okay|got\s*it|fine|chalo)\b/i,
+      /\b(ok|okay|got\s*it|fine|chalo|aage\s*badho|shuru\s*karo)\b/i,
+      // Devanagari resume phrases
+      /(जारी(\s*रखो)?|चलते\s*रहो|ठीक\s*है|हाँ|आगे\s*बढ़ो|शुरू\s*करो|चलो)/,
     ];
 
     setCurrentSpeakingText(text) {
@@ -300,10 +314,10 @@
       if (!this.currentSpeakingText) return false;
       const lower = transcript.toLowerCase().trim();
       // If the user explicitly addressed Docy or used clear Hindi/distinct wake words, it's not echo
-      if (/\b(docy|doci|docvex|dokey|dhoki|ruk|ruko|doubt|suno?|sun\b|listen|chup)\b/i.test(lower)) {
+      if (/\b(docy|doci|docvex|dokey|dhoki|ruk|ruko|doubt|suno?|sun\b|listen|chup|hold|bhai)\b/i.test(lower) || /[\u0900-\u097F]/.test(lower)) {
         return false;
       }
-      // If it's a bare generic word ("wait", "stop", "pause") that literally appears in the sentence DocVex is uttering:
+      // If it's a bare isolated word ("wait", "stop", "pause") that literally appears in the sentence DocVex is uttering:
       if (/^(wait|stop|pause)$/i.test(lower) && this.currentSpeakingText.includes(lower)) {
         return true;
       }
@@ -312,31 +326,44 @@
 
     async ensureMicAccess() {
       if (this.hasMicPermission && this.micStream?.active) return true;
-      try {
-        console.log('[Docy Voice] Requesting microphone access with echo cancellation...');
-        this.micStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
-        this.hasMicPermission = true;
-        console.log('[Docy Voice] Microphone access granted! 🎙️');
-        // Persist mic permission so popup and future loads reflect it
-        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-          chrome.storage.local.set({ docvexMicEnabled: true });
+      if (this._pendingMicPromise) return this._pendingMicPromise;
+
+      this._pendingMicPromise = (async () => {
+        try {
+          console.log('[Docy Voice] Requesting microphone access with echo cancellation...');
+          const streamPromise = navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          });
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Mic permission request timed out')), 4000)
+          );
+          this.micStream = await Promise.race([streamPromise, timeoutPromise]);
+          this.hasMicPermission = true;
+          this._sttPermissionDenied = false;
+          console.log('[Docy Voice] Microphone access granted! 🎙️');
+          // Persist mic permission so popup and future loads reflect it
+          if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+            chrome.storage.local.set({ docvexMicEnabled: true });
+          }
+          this._updateMicButton(true);
+          this._initVAD(this.micStream);
+          return true;
+        } catch (err) {
+          console.warn('[Docy Voice] Microphone permission denied or unavailable:', err.message);
+          this.hasMicPermission = false;
+          this._updateMicButton(false);
+          updateHUDStatus('🎙️ Click "🎙️ Enable Mic" to allow Docy voice commands');
+          return false;
         }
-        this._updateMicButton(true);
-        this._initVAD(this.micStream);
-        return true;
-      } catch (err) {
-        console.warn('[Docy Voice] Microphone permission denied or unavailable:', err.message);
-        this.hasMicPermission = false;
-        this._updateMicButton(false);
-        updateHUDStatus('🎙️ Click "🎙️ Enable Mic" to allow Docy voice commands');
-        return false;
-      }
+      })().finally(() => {
+        this._pendingMicPromise = null;
+      });
+
+      return this._pendingMicPromise;
     }
 
     async toggleMicAccess() {
@@ -409,8 +436,8 @@
         }
         const avg = sum / (endBin - startBin);
 
-        // Threshold for intentional speech into microphone (ignore background noise < 38)
-        if (avg > 38) {
+        // Threshold for intentional speech into microphone (conversational level > 24)
+        if (avg > 24) {
           consecutiveSpikes++;
           if (consecutiveSpikes >= 2) { // sustained for ~160ms
             dbg('[Docy VAD] Voice activity detected via microphone (level:', Math.round(avg), '). Pausing DocVex.');
@@ -491,14 +518,27 @@
 
         this.recognition.onend = () => {
           // Keep recognition alive as long as docyInterrupt is active (whether speaking OR interrupted/listening)
-          if (this.active) {
-            try { this.recognition.start(); } catch { /* already starting */ }
-          }
+          if (!this.active || this._sttPermissionDenied) return;
+          // Chrome needs a small tick to release the previous session before restarting
+          setTimeout(() => {
+            if (this.active && !this._sttPermissionDenied) {
+              try {
+                this.recognition.start();
+              } catch {
+                setTimeout(() => {
+                  if (this.active && !this._sttPermissionDenied) {
+                    try { this.recognition.start(); } catch {}
+                  }
+                }, 150);
+              }
+            }
+          }, 50);
         };
 
         this.recognition.onerror = (e) => {
           console.warn('[Docy Voice Recognition Event]', e.error);
           if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+            this._sttPermissionDenied = true;
             updateHUDStatus('🎙️ Allow microphone for Docy voice commands');
           } else if (e.error === 'network') {
             // Typical in Brave where Google STT cloud server is stripped
@@ -513,27 +553,26 @@
       }
     }
 
-    /** Start continuous listening. Call when DocVex begins speaking. */
-    async start() {
+    /** Start continuous listening immediately. Call when DocVex begins speaking. */
+    start() {
       if (this.active) return;
       this.active = true;
       console.log('[Docy Voice] Starting Docy voice listener...');
 
-      // 1. Ensure microphone access is active
-      const micWasAlreadyActive = this.hasMicPermission && this.micStream?.active;
-      await this.ensureMicAccess();
-
-      // Restart VAD monitoring if mic was already open (not restarted by ensureMicAccess)
-      if (micWasAlreadyActive && this.analyser) {
-        this._startVADMonitoring();
-      }
-
-      // 2. Start SpeechRecognition if available
+      // 1. Start SpeechRecognition IMMEDIATELY without waiting for getUserMedia
       if (!this.recognition) this.init();
-      if (this.recognition) {
+      if (this.recognition && !this._sttPermissionDenied) {
         try {
           this.recognition.start();
         } catch { /* already running */ }
+      }
+
+      // 2. Ensure microphone access concurrently in background for VAD fallback
+      const micWasAlreadyActive = this.hasMicPermission && this.micStream?.active;
+      if (micWasAlreadyActive && this.analyser) {
+        this._startVADMonitoring();
+      } else {
+        this.ensureMicAccess().catch(() => {});
       }
     }
 
@@ -1468,49 +1507,48 @@
   }
 
   function pauseSpeech() {
-    // Offscreen chatterbox path: post PAUSE_AUDIO if chatterbox audio is actively streaming
-    if (chatterboxEnabled && activePort && (isChatterboxPlaying || isSpeaking)) {
-      activePort.postMessage({ action: 'PAUSE_AUDIO' });
-      isPaused = true;
-      updatePlayButtonState();
-      updateHUDStatus('⏸ Audio paused');
-      return;
+    isPaused = true;
+
+    // 1. Offscreen Chatterbox path
+    if (activePort && (isChatterboxPlaying || chatterboxEnabled || isSpeaking)) {
+      try {
+        activePort.postMessage({ action: 'PAUSE_AUDIO' });
+      } catch {}
     }
-    // Local chatterbox path (audio element in content script)
-    if (activeAudio && (isChatterboxPlaying || isSpeaking)) {
-      activeAudio.pause();
-      isPaused = true;
-      updatePlayButtonState();
-      updateHUDStatus('⏸ Audio paused');
-      return;
+    // 2. Local Chatterbox path (audio element in content script)
+    if (activeAudio) {
+      try {
+        activeAudio.pause();
+      } catch {}
     }
-    // Browser SpeechSynthesis path
-    if (window.speechSynthesis && window.speechSynthesis.speaking) {
-      window.speechSynthesis.pause();
-      isPaused = true;
-      updatePlayButtonState();
-      updateHUDStatus('⏸ Audio paused');
+    // 3. Browser SpeechSynthesis path
+    if (window.speechSynthesis && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
+      try {
+        window.speechSynthesis.pause();
+      } catch {}
     }
+    updatePlayButtonState();
+    updateHUDStatus('⏸ Audio paused');
   }
 
   function resumeSpeech() {
-    if (chatterboxEnabled && activePort && isPaused) {
-      activePort.postMessage({ action: 'RESUME_AUDIO' });
-      isPaused = false;
+    isPaused = false;
+    if (chatterboxEnabled && activePort) {
+      try {
+        activePort.postMessage({ action: 'RESUME_AUDIO' });
+      } catch {}
       updatePlayButtonState();
       updateHUDStatus('🔊 Speaking with local Chatterbox…');
       return;
     }
-    if (activeAudio && isPaused) {
+    if (activeAudio) {
       activeAudio.play().catch(() => {});
-      isPaused = false;
       updatePlayButtonState();
       updateHUDStatus('🔊 Speaking with local Chatterbox…');
       return;
     }
     if (window.speechSynthesis && window.speechSynthesis.paused) {
       window.speechSynthesis.resume();
-      isPaused = false;
       updatePlayButtonState();
       updateHUDStatus('🔊 Speaking explanation…');
     }
@@ -1759,8 +1797,17 @@
             console.log(`[DocVex Timing] Chatterbox Playback Started (T0->T6): ${Math.round(timingMetrics.t6 - timingMetrics.t0)}ms`);
           }
           isSpeaking = true;
-          isPaused = false;
           isChatterboxPlaying = true;
+
+          // If currently paused by user or Docy Voice Interrupt, immediately pause the offscreen audio!
+          if (isPaused || docyInterrupt.interrupted) {
+            try {
+              activePort.postMessage({ action: 'PAUSE_AUDIO' });
+            } catch {}
+            return;
+          }
+
+          isPaused = false;
           updatePlayButtonState();
           updateHUDStatus(`🔊 Speaking with local Chatterbox… (sentence ${data.sentenceIndex || 1})`);
           docyInterrupt.setCurrentSpeakingText(data.sentence || data.speechText || '');

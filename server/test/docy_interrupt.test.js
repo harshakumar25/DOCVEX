@@ -6,23 +6,33 @@ import assert from 'node:assert/strict';
 const WAKE_PATTERNS = [
   // Direct Docy address
   /\b(docy|doci|docvex|dokey|dhoki)\b/i,
-  // Hindi/Hinglish stop commands: ruk, ruko, ruk ja, ruk jao, ruk ja bhai, ruk ja bhyii, ruk ja yaar
-  /\b(ru+k+|roo?k+)\s*(ja+[ao]*|o+|ha)?(\s*(bha?y+i+|bha?i|bhaiya|yaar|yar|re|na))?\b/i,
+  // Hindi/Hinglish stop commands: ruk, ruko, ruk ja, ruk jao, ruk ja bhai, ruk ja bhyii, ruk ja yaar, rukh
+  /\b(ru+k+|roo?k+|ru+kh?)\s*(ja+[ao]*|o+|ha)?(\s*(bha?y+i+|bha?i|bhaiya|yaar|yar|re|na|zara|ji))?\b/i,
+  // Devanagari Hindi stop commands: रुक, रुको, रुक जा, रुक जाओ, रुकिए, रुक जा भाई, रुक जा यार
+  /(रुक(ना|ो|िए)?(\s*(जा+[ओो]*|जाइए))?(\s*(भाई|यार|रे|ना|ज़रा|जरा))?)/,
   // Hindi silence/stop commands: chup, chup ho ja, chup karo, shant, shant ho ja
-  /\b(chup(\s*(ho\s*ja|karo))?|shant(\s*(ho\s*ja|raho))?)\b/i,
-  // Hindi attention commands: sun, suno, sun bhai, sun bhyii, arey sun, arey suno, sun na
-  /\b(suno?|arey?\s*suno?|sun\s*(bha?y+i+|bha?i|na|yaar|yar)?|bha?i\s*sun)\b/i,
-  // English wait variations: wait, waitt, wait a sec, wait a second, wait for a moment, ok wait, okk wait
-  /\b(wait|waitt)(\s+(for\s+)?(a\s+)?(moment|sec|second|minute))?\b/i,
-  // English listen / hey: listen, hey docy, docy listen, listen docy, just listen
-  /\b(listen|hey\s+docy|docy\s+listen|listen\s+docy|just\s+listen)\b/i,
+  /\b(chup(\s*(ho\s*ja|karo|raho))?|shant(\s*(ho\s*ja|raho))?)\b/i,
+  // Devanagari silence: चुप, चुप हो जा, चुप रहो, शांत
+  /(चुप(\s*(हो\s*जा|रहो|करो))?|शांत(\s*(हो\s*जा|रहो))?)/,
+  // Hindi attention commands: sun, suno, sun bhai, sun bhyii, arey sun, arey suno, sun na, sun lo
+  /\b(suno?|arey?\s*suno?|sun\s*(bha?y+i+|bha?i|na|yaar|yar|lo|be)?|bha?i\s*sun)\b/i,
+  // Devanagari attention: सुन, सुनो, सुनिए, अरे सुनो, भाई सुन
+  /(सुन(ना|ो|िए)?|अरे\s*सुन(ना|ो|िए)?|भाई\s*सुन(ना|ो|िए)?)/,
+  // English wait variations: wait, waitt, wait a sec, wait a second, wait for a moment, ok wait, okk wait, okay wait
+  /\b(ok+|okay)?\s*(wait|waitt|weight)(\s+(for\s+)?(a\s+)?(moment|sec|second|minute))?\b/i,
+  // English listen / hey: listen, hey docy, docy listen, listen docy, just listen, hey wait
+  /\b(listen|hey\s+docy|docy\s+listen|listen\s+docy|just\s+listen|hey\s+wait)\b/i,
   // English pause / stop / hold commands
-  /\b(pause|stop|hold\s*on|hold\s*up)\b/i,
-  // Short-time expressions: ek sec, ek second, ek minute, ek min, just a sec, just a second
-  /\b(ek\s*(sec|second|pal|minute|min))\b/i,
+  /\b(pause|stop|hold\s*on|hold\s*up|hang\s*on|shut\s*up|be\s*quiet)\b/i,
+  // Devanagari pause/stop: रुको जरा, ठहरो
+  /(रुको\s*ज़रा|रुको\s*जरा|ठहरो)/,
+  // Short-time expressions: ek sec, ek second, ek minute, ek min, 1 sec, 1 min, just a sec
+  /\b((ek|1|one)\s*(sec|second|pal|minute|min))\b/i,
+  /(एक\s*(सेकंड|मिनट|पल)|१\s*(सेकंड|मिनट))/i,
   /\b(just\s*a\s*(sec|second|minute|moment))\b/i,
-  // Student doubt: doubt, i have a doubt
-  /\b(i\s*have\s*a\s*)?doubt\b/i,
+  // Student doubt: doubt, i have a doubt, ek doubt
+  /\b((i\s*have\s*a|ek)\s*)?doubt\b/i,
+  /(डाउट|संदेह|सवाल|प्रश्न)/,
 ];
 
 const RESUME_PATTERNS = [
@@ -31,7 +41,9 @@ const RESUME_PATTERNS = [
   /\bjaari\b/i,
   /\btheek\s*hai\b/i,
   /\bhaan\b/i,
-  /\b(ok|okay|got\s*it|fine|chalo)\b/i,
+  /\b(ok|okay|got\s*it|fine|chalo|aage\s*badho|shuru\s*karo)\b/i,
+  // Devanagari resume phrases
+  /(जारी(\s*रखो)?|चलते\s*रहो|ठीक\s*है|हाँ|आगे\s*बढ़ो|शुरू\s*करो|चलो)/,
 ];
 
 const matchesWake = (transcript) => WAKE_PATTERNS.some((p) => p.test(transcript));
@@ -40,7 +52,7 @@ const matchesResume = (transcript) => RESUME_PATTERNS.some((p) => p.test(transcr
 const isSelfEcho = (transcript, currentSpeakingText) => {
   if (!currentSpeakingText) return false;
   const lower = transcript.toLowerCase().trim();
-  if (/\b(docy|doci|docvex|dokey|dhoki|ruk|ruko|doubt|suno?|sun\b|listen|chup)\b/i.test(lower)) {
+  if (/\b(docy|doci|docvex|dokey|dhoki|ruk|ruko|doubt|suno?|sun\b|listen|chup|hold|bhai)\b/i.test(lower) || /[\u0900-\u097F]/.test(lower)) {
     return false;
   }
   if (/^(wait|stop|pause)$/i.test(lower) && currentSpeakingText.toLowerCase().includes(lower)) {
@@ -59,6 +71,7 @@ test('Docy Voice Interrupt: detects English wake phrases reliably', () => {
     'wait',
     'okk wait',
     'ok wait',
+    'okay wait',
     'wait for moment',
     'wait for a moment',
     'wait a second',
@@ -66,12 +79,17 @@ test('Docy Voice Interrupt: detects English wake phrases reliably', () => {
     'pause please',
     'hold on',
     'hold up',
+    'hang on',
     'stop',
     'docy i have a doubt',
     'i have a doubt',
     'i have a doubt about this function',
     'doubt here',
+    'ek doubt',
     'docvex wait',
+    'hey wait',
+    '1 min',
+    'one minute',
   ];
 
   for (const phrase of englishPhrases) {
@@ -92,6 +110,7 @@ test('Docy Voice Interrupt: detects Hindi/Hinglish wake phrases reliably', () =>
     'ruko',
     'chup',
     'chup ho ja',
+    'chup raho',
     'shant ho ja',
     'sun bhai',
     'bhai sun',
@@ -102,6 +121,21 @@ test('Docy Voice Interrupt: detects Hindi/Hinglish wake phrases reliably', () =>
     'ek min',
     'ek minute',
     'ek pal',
+    // Devanagari Hindi
+    'रुक जा',
+    'रुक',
+    'रुको',
+    'रुकिए',
+    'रुक जा भाई',
+    'सुनो',
+    'सुन भाई',
+    'अरे सुनो',
+    'चुप',
+    'चुप रहो',
+    'शांत',
+    'रुको जरा',
+    'एक मिनट',
+    'डाउट',
   ];
 
   for (const phrase of hindiPhrases) {
@@ -137,6 +171,15 @@ test('Docy Voice Interrupt: detects English & Hindi resume phrases', () => {
     'chalo',
     'chalte raho',
     'jaari rakho',
+    'aage badho',
+    'shuru karo',
+    // Devanagari Hindi
+    'जारी रखो',
+    'चलते रहो',
+    'ठीक है',
+    'हाँ',
+    'आगे बढ़ो',
+    'शुरू करो',
   ];
 
   for (const phrase of resumePhrases) {
