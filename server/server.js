@@ -95,7 +95,7 @@ export const validateTeachInput = (body, maxLength = config.MAX_SELECTION_LENGTH
     return { valid: false, error: 'Request body must be a JSON object.' };
   }
 
-  const { text, url, title, provider, pageContext } = body;
+  const { text, url, title, provider, pageContext, isFollowUp, followUpContext } = body;
 
   if (!text || typeof text !== 'string' || text.trim().length === 0) {
     return { valid: false, error: 'Select some text first.' };
@@ -133,6 +133,8 @@ export const validateTeachInput = (body, maxLength = config.MAX_SELECTION_LENGTH
       title: title?.trim() || '',
       pageContext: pageContext?.trim() || '',
       provider: provider || config.DEFAULT_PROVIDER,
+      isFollowUp: Boolean(isFollowUp),
+      followUpContext: typeof followUpContext === 'string' ? followUpContext.slice(0, 1200) : '',
     },
   };
 };
@@ -329,7 +331,7 @@ export const createServer = (options = {}) => {
                 res.end();
               },
               signal: currentController.signal,
-              options: serverConfig,
+              options: { ...serverConfig, isFollowUp: validation.data.isFollowUp, followUpContext: validation.data.followUpContext },
             }
           );
         } catch (err) {
@@ -349,7 +351,7 @@ export const createServer = (options = {}) => {
 
       const handler = serverConfig.teachHandler || teachPipeline;
       try {
-        const result = await handler(validation.data, { ...serverConfig, signal: currentController.signal });
+        const result = await handler(validation.data, { ...serverConfig, signal: currentController.signal, isFollowUp: validation.data.isFollowUp, followUpContext: validation.data.followUpContext });
         clearActiveController();
         return sendJson(res, 200, result, req);
       } catch (err) {

@@ -1,4 +1,4 @@
-import { buildTeachingPrompt, shapeSpeechText, TEACHER_SYSTEM_PROMPT } from './prompt/teacherPrompt.js';
+import { buildTeachingPrompt, buildFollowUpPrompt, shapeSpeechText, TEACHER_SYSTEM_PROMPT, DOCY_FOLLOWUP_SYSTEM_PROMPT } from './prompt/teacherPrompt.js';
 import { buildReasoningPrompt, OLLAMA_REASONING_SYSTEM_PROMPT } from './prompt/reasoningPrompt.js';
 import { generateExplanation, streamExplanation } from './providers/providerFactory.js';
 import { ChatterboxProvider } from './providers/chatterboxProvider.js';
@@ -63,27 +63,44 @@ export const teachPipeline = async (
     references = [];
   }
 
-  // 2. Build structured teaching prompt with explicit groundingStatus
-  const { userPrompt, groundingStatus, sourceDomains } = buildTeachingPrompt({
-    selectedText: text,
-    pageTitle: title,
-    pageUrl: url,
-    evidence: references,
-  });
+  const isFollowUp = Boolean(options.isFollowUp || false);
 
-  const sources = references.map((ref) => ({
-    title: ref.title,
-    url: ref.url,
-    domain: ref.domain,
-  }));
+  // Follow-up: use warm context-aware prompt instead of cold teaching prompt
+  let userPrompt, groundingStatus, sourceDomains, sources;
+  if (isFollowUp) {
+    userPrompt = buildFollowUpPrompt({
+      followUpQuestion: text,
+      previousContext: options.followUpContext || '',
+    });
+    groundingStatus = 'ungrounded';
+    sourceDomains = [];
+    sources = [];
+  } else {
+    // 2. Build structured teaching prompt with explicit groundingStatus
+    const result = buildTeachingPrompt({
+      selectedText: text,
+      pageTitle: title,
+      pageUrl: url,
+      evidence: references,
+    });
+    userPrompt = result.userPrompt;
+    groundingStatus = result.groundingStatus;
+    sourceDomains = result.sourceDomains;
+    sources = references.map((ref) => ({
+      title: ref.title,
+      url: ref.url,
+      domain: ref.domain,
+    }));
+  }
 
+  const activeSystemPrompt = isFollowUp ? DOCY_FOLLOWUP_SYSTEM_PROMPT : TEACHER_SYSTEM_PROMPT;
   const chosenProvider = provider || options.DEFAULT_PROVIDER || 'ollama';
 
   // Hybrid Mode: Groq provides rapid explanation, Ollama provides background deep reasoning
   if (chosenProvider === 'hybrid') {
     const groqPromise = generateExplanation({
       prompt: userPrompt,
-      systemPrompt: TEACHER_SYSTEM_PROMPT,
+      systemPrompt: activeSystemPrompt,
       provider: 'groq',
       options,
       signal: options.signal,
@@ -127,7 +144,7 @@ export const teachPipeline = async (
   // 3. Generate explanation using requested or default provider
   const modelResult = await generateExplanation({
     prompt: userPrompt,
-    systemPrompt: TEACHER_SYSTEM_PROMPT,
+    systemPrompt: activeSystemPrompt,
     provider: chosenProvider,
     options,
     signal: options.signal,
@@ -173,18 +190,36 @@ export const streamTeachPipeline = async (
     references = [];
   }
 
-  const { userPrompt, groundingStatus, sourceDomains } = buildTeachingPrompt({
-    selectedText: text,
-    pageTitle: title,
-    pageUrl: url,
-    evidence: references,
-  });
+  const isFollowUp = Boolean(options.isFollowUp || false);
 
-  const sources = references.map((ref) => ({
-    title: ref.title,
-    url: ref.url,
-    domain: ref.domain,
-  }));
+  let userPrompt, groundingStatus, sourceDomains, sources;
+  if (isFollowUp) {
+    // Skip retrieval for follow-ups — the context is already in previousContext
+    userPrompt = buildFollowUpPrompt({
+      followUpQuestion: text,
+      previousContext: options.followUpContext || '',
+    });
+    groundingStatus = 'ungrounded';
+    sourceDomains = [];
+    sources = [];
+  } else {
+    const result = buildTeachingPrompt({
+      selectedText: text,
+      pageTitle: title,
+      pageUrl: url,
+      evidence: references,
+    });
+    userPrompt = result.userPrompt;
+    groundingStatus = result.groundingStatus;
+    sourceDomains = result.sourceDomains;
+    sources = references.map((ref) => ({
+      title: ref.title,
+      url: ref.url,
+      domain: ref.domain,
+    }));
+  }
+
+  const activeSystemPrompt = isFollowUp ? DOCY_FOLLOWUP_SYSTEM_PROMPT : TEACHER_SYSTEM_PROMPT;
 
   const chosenProvider = provider || options.DEFAULT_PROVIDER || 'ollama';
   const isHybrid = chosenProvider === 'hybrid';
@@ -261,13 +296,14 @@ export const streamTeachPipeline = async (
       })
     : null;
 
-  // In hybrid mode, dispatch background deep-dive reasoning with Ollama concurrently (skip for trivial greetings).
+  // In hybrid mode, dispatch background deep-dive reasoning with Ollama concurrently (skip for trivial greetings and follow-ups).
   // Ollama is fire-and-forget — it must NEVER block onDone. Insights arrive later via onInsights.
   let ollamaPromise = null;
   const isSubstantialTechnicalText =
     (text || '').trim().length >= 25 &&
     !/^(hi+|hello+|hey+|yo+|what'?s\s*up|greetings|hola)\b/i.test((text || '').trim());
-  if (isHybrid && isSubstantialTechnicalText) {
+  if (isHybrid && isSubstantialTechnicalText && !isFollowUp) {
+
     const reasoningPrompt = buildReasoningPrompt({
       selectedText: text,
       pageTitle: title,
@@ -294,7 +330,7 @@ export const streamTeachPipeline = async (
     try {
       modelResult = await streamExplanation({
         prompt: userPrompt,
-        systemPrompt: TEACHER_SYSTEM_PROMPT,
+        systemPrompt: activeSystemPrompt,
         provider: voiceProvider,
         options,
         signal,
@@ -312,7 +348,7 @@ export const streamTeachPipeline = async (
         ollamaPromise = null;
         modelResult = await streamExplanation({
           prompt: userPrompt,
-          systemPrompt: TEACHER_SYSTEM_PROMPT,
+          systemPrompt: activeSystemPrompt,
           provider: 'ollama',
           options,
           signal,

@@ -3,6 +3,7 @@ const queue = [];
 let active = null;
 let activeAudio = null;
 let pauseTimer = null;
+let isPaused = false;
 // Prefetch cache: sentenceIndex -> { objectUrl, promise }
 const prefetchCache = new Map();
 
@@ -71,6 +72,7 @@ const prefetchNext = () => {
 };
 
 const playNext = async () => {
+  if (isPaused) return;
   if (pauseTimer) {
     clearTimeout(pauseTimer);
     pauseTimer = null;
@@ -107,6 +109,13 @@ const playNext = async () => {
     return;
   }
 
+  if (isPaused) {
+    // If paused while prefetching was awaiting, restore active to front of queue and abort
+    queue.unshift(current);
+    active = null;
+    return;
+  }
+
   const audio = new Audio(objectUrl);
   activeAudio = audio;
 
@@ -140,10 +149,10 @@ const playNext = async () => {
     if (pauseMs > 0) {
       pauseTimer = setTimeout(() => {
         pauseTimer = null;
-        playNext();
+        if (!isPaused) playNext();
       }, pauseMs);
     } else {
-      playNext();
+      if (!isPaused) playNext();
     }
   };
 
@@ -187,15 +196,16 @@ chrome.runtime.onMessage.addListener((message) => {
     }
     queue.push(message);
     // Prefetch this item immediately if idle, otherwise it'll be prefetched when current finishes
-    if (!activeAudio) {
+    if (!activeAudio && !isPaused) {
       playNext();
     } else {
-      // Current audio is playing — start prefetching the newly arrived item if it's next
+      // Current audio is playing or paused — start prefetching the newly arrived item if it's next
       prefetchNext();
     }
     return;
   }
   if (message.action === 'SET_ACTIVE_REQUEST') {
+    isPaused = false;
     if (pauseTimer) {
       clearTimeout(pauseTimer);
       pauseTimer = null;
@@ -218,18 +228,23 @@ chrome.runtime.onMessage.addListener((message) => {
     return;
   }
   if (message.action === 'PAUSE_AUDIO') {
+    isPaused = true;
     if (pauseTimer) {
       clearTimeout(pauseTimer);
       pauseTimer = null;
     }
     activeAudio?.pause();
+    console.log('[DocVex Offscreen] Audio paused.');
   } else if (message.action === 'RESUME_AUDIO') {
+    isPaused = false;
     if (activeAudio) {
       activeAudio.play().catch(() => {});
     } else if (queue.length > 0) {
       playNext();
     }
+    console.log('[DocVex Offscreen] Audio resumed.');
   } else if (message.action === 'STOP_AUDIO') {
+    isPaused = false;
     if (pauseTimer) {
       clearTimeout(pauseTimer);
       pauseTimer = null;
