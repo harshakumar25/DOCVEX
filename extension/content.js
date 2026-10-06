@@ -273,14 +273,16 @@
       /\b(chup(\s*(ho\s*ja|karo|raho))?|shant(\s*(ho\s*ja|raho))?)\b/i,
       // Devanagari silence: चुप, चुप हो जा, चुप रहो, शांत
       /(चुप(\s*(हो\s*जा|रहो|करो))?|शांत(\s*(हो\s*जा|रहो))?)/,
-      // Hindi attention commands: sun, suno, sun bhai, sun bhyii, arey sun, arey suno, sun na, sun lo
-      /\b(suno?|arey?\s*suno?|sun\s*(bha?y+i+|bha?i|na|yaar|yar|lo|be)?|bha?i\s*sun)\b/i,
-      // Devanagari attention: सुन, सुनो, सुनिए, अरे सुनो, भाई सुन
-      /(सुन(ना|ो|िए)?|अरे\s*सुन(ना|ो|िए)?|भाई\s*सुन(ना|ो|िए)?)/,
+      // Hindi attention commands: sun, suno, sun bhai, sun bhyii, arey sun, arey suno, sun na, sun lo, sun rahe ho, sun rha h
+      /\b(suno?|arey?\s*suno?|sun\s*(rahe?\s*ho|raha\s*hai|rha\s*h|bha?y+i+|bha?i|na|yaar|yar|lo|be)?|bha?i\s*sun)\b/i,
+      // Devanagari attention: सुन, सुनो, सुनिए, अरे सुनो, भाई सुन, सुन रहे हो
+      /(सुन(ना|ो|िए| रहे हो| रहा है)?|अरे\s*सुन(ना|ो|िए)?|भाई\s*सुन(ना|ो|िए)?)/,
       // English wait variations: wait, waitt, wait a sec, wait a second, wait for a moment, ok wait, okk wait, okay wait
       /\b(ok+|okay)?\s*(wait|waitt|weight)(\s+(for\s+)?(a\s+)?(moment|sec|second|minute))?\b/i,
-      // English listen / hey: listen, hey docy, docy listen, listen docy, just listen, hey wait
-      /\b(listen|hey\s+docy|docy\s+listen|listen\s+docy|just\s+listen|hey\s+wait)\b/i,
+      // English listen / hey: listen, hey docy, docy listen, listen docy, just listen, hey wait, are you listening, listening, can you hear me
+      /\b(listen|listening|are\s+you\s+listening|can\s+you\s+hear\s+me|hey\s+docy|docy\s+listen|listen\s+docy|just\s+listen|hey\s+wait)\b/i,
+      // Greetings and addressing Docy: hello docy, hello, hi docy, hi
+      /\b(hello(\s+docy)?|hi\s+docy)\b/i,
       // English pause / stop / hold commands
       /\b(pause|stop|hold\s*on|hold\s*up|hang\s*on|shut\s*up|be\s*quiet)\b/i,
       // Devanagari pause/stop: रुको जरा, ठहरो
@@ -314,7 +316,7 @@
       if (!this.currentSpeakingText) return false;
       const lower = transcript.toLowerCase().trim();
       // If the user explicitly addressed Docy or used clear Hindi/distinct wake words, it's not echo
-      if (/\b(docy|doci|docvex|dokey|dhoki|ruk|ruko|doubt|suno?|sun\b|listen|chup|hold|bhai)\b/i.test(lower) || /[\u0900-\u097F]/.test(lower)) {
+      if (/\b(docy|doci|docvex|dokey|dhoki|ruk|ruko|doubt|suno?|sun\b|listen|listening|hello|hi|chup|hold|bhai)\b/i.test(lower) || /[\u0900-\u097F]/.test(lower)) {
         return false;
       }
       // If it's a bare isolated word ("wait", "stop", "pause") that literally appears in the sentence DocVex is uttering:
@@ -339,7 +341,7 @@
             },
           });
           const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Mic permission request timed out')), 4000)
+            setTimeout(() => reject(new Error('Mic permission request timed out')), 25000)
           );
           this.micStream = await Promise.race([streamPromise, timeoutPromise]);
           this.hasMicPermission = true;
@@ -371,10 +373,18 @@
         const ok = await this.ensureMicAccess();
         if (ok) {
           updateHUDStatus('🎙️ Docy voice listener active!');
-          if (isSpeaking) this.start();
+          this.start(true);
         }
       } else {
-        updateHUDStatus('🎙️ Docy voice listener is active.');
+        if (this.active) {
+          this.stop(false);
+          updateHUDStatus('🎙️ Docy voice listener paused.');
+          this._updateMicButton(false);
+        } else {
+          this.start(true);
+          updateHUDStatus('🎙️ Docy is listening…');
+          this._updateMicButton(true);
+        }
       }
     }
 
@@ -414,7 +424,7 @@
 
       this.vadInterval = setInterval(() => {
         // VAD only acts as interrupt when DocVex is actively speaking and not already paused
-        if (!this.active || this.interrupted || !isSpeaking || isPaused) {
+        if (!this.active || this.interrupted || (!isSpeaking && !isClientSpeechPlaying) || isPaused) {
           consecutiveSpikes = 0;
           return;
         }
@@ -436,8 +446,8 @@
         }
         const avg = sum / (endBin - startBin);
 
-        // Threshold for intentional speech into microphone (conversational level > 24)
-        if (avg > 24) {
+        // Threshold for intentional speech into microphone (conversational level > 16)
+        if (avg > 16) {
           consecutiveSpikes++;
           if (consecutiveSpikes >= 2) { // sustained for ~160ms
             dbg('[Docy VAD] Voice activity detected via microphone (level:', Math.round(avg), '). Pausing DocVex.');
@@ -553,18 +563,22 @@
       }
     }
 
-    /** Start continuous listening immediately. Call when DocVex begins speaking. */
-    start() {
-      if (this.active) return;
+    /** Start continuous listening immediately. Call when DocVex begins speaking or mic is toggled. */
+    start(force = false) {
+      if (this.active && !force) return;
       this.active = true;
       console.log('[Docy Voice] Starting Docy voice listener...');
+
+      if (force) {
+        this._sttPermissionDenied = false;
+      }
 
       // 1. Start SpeechRecognition IMMEDIATELY without waiting for getUserMedia
       if (!this.recognition) this.init();
       if (this.recognition && !this._sttPermissionDenied) {
         try {
           this.recognition.start();
-        } catch { /* already running */ }
+        } catch { /* already running or starting */ }
       }
 
       // 2. Ensure microphone access concurrently in background for VAD fallback
@@ -574,6 +588,7 @@
       } else {
         this.ensureMicAccess().catch(() => {});
       }
+      this._updateMicButton(true);
     }
 
     /** Stop recognition completely. Call when DocVex finishes / is stopped. */
@@ -1340,11 +1355,30 @@
   }
 
   // --- Speech Queue & Playback Engine ---
+  let clientSpeechQueue = [];
+  let isClientSpeechPlaying = false;
+  let currentSpeakingItem = null;
+
   function queueSpeechSentence(sentence, index, requestId) {
     if (!sentence || !('speechSynthesis' in window)) return;
     if (requestId !== activeRequestId) return; // Discard stale requests
 
-    const utterance = new SpeechSynthesisUtterance(sentence);
+    clientSpeechQueue.push({ sentence, index, requestId });
+    if (!isClientSpeechPlaying && !isPaused) {
+      playNextSpeechSentence();
+    }
+  }
+
+  function playNextSpeechSentence() {
+    if (isPaused || isClientSpeechPlaying || clientSpeechQueue.length === 0) return;
+    const item = clientSpeechQueue.shift();
+    if (!item || item.requestId !== activeRequestId) {
+      playNextSpeechSentence();
+      return;
+    }
+
+    currentSpeakingItem = item;
+    const utterance = new SpeechSynthesisUtterance(item.sentence);
     utterance.rate = 0.97;
     utterance.pitch = 1.0;
 
@@ -1355,27 +1389,28 @@
     }
 
     utterance.onstart = () => {
-      if (requestId !== activeRequestId) {
+      if (item.requestId !== activeRequestId) {
         window.speechSynthesis.cancel();
         return;
       }
 
-      if (index === 1 && timingMetrics.t6 === 0) {
+      if (item.index === 1 && timingMetrics.t6 === 0) {
         timingMetrics.t6 = performance.now();
         const latency = Math.round(timingMetrics.t6 - timingMetrics.t0);
         console.log(`[DocVex Timing] First Audible Speech (T0->T6): ${latency}ms`);
       }
 
+      isClientSpeechPlaying = true;
       isSpeaking = true;
       isPaused = false;
       updatePlayButtonState();
       updateHUDStatus('🔊 Speaking explanation…');
-      docyInterrupt.setCurrentSpeakingText(sentence);
+      docyInterrupt.setCurrentSpeakingText(item.sentence);
       docyInterrupt.start();
 
       if (!speechKeepAliveInterval) {
         speechKeepAliveInterval = setInterval(() => {
-          if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+          if (window.speechSynthesis.speaking && !window.speechSynthesis.paused && !isPaused) {
             window.speechSynthesis.pause();
             window.speechSynthesis.resume();
           }
@@ -1383,22 +1418,35 @@
       }
     };
 
-    utterance.onend = () => {
+    const finish = () => {
+      isClientSpeechPlaying = false;
       const idx = activeUtterances.indexOf(utterance);
       if (idx !== -1) {
         activeUtterances.splice(idx, 1);
       }
 
-      if (activeUtterances.length === 0 && !window.speechSynthesis.speaking) {
-        isSpeaking = false;
-        isPaused = false;
-        clearInterval(speechKeepAliveInterval);
-        speechKeepAliveInterval = null;
-        docyInterrupt.setCurrentSpeakingText('');
-        docyInterrupt.stop();
-        updatePlayButtonState();
-        updateHUDStatus('Finished speaking.');
+      if (item.requestId === activeRequestId) {
+        if (clientSpeechQueue.length > 0) {
+          playNextSpeechSentence();
+        } else {
+          isSpeaking = false;
+          isPaused = false;
+          currentSpeakingItem = null;
+          clearInterval(speechKeepAliveInterval);
+          speechKeepAliveInterval = null;
+          docyInterrupt.setCurrentSpeakingText('');
+          updatePlayButtonState();
+          updateHUDStatus('Finished speaking. Docy is listening for questions…');
+          if (!docyInterrupt.hasMicPermission) {
+            docyInterrupt.stop();
+          }
+        }
       }
+    };
+
+    utterance.onend = () => {
+      if (isPaused) return;
+      finish();
     };
 
     utterance.onerror = (e) => {
@@ -1409,15 +1457,8 @@
       if (e.error !== 'canceled' && e.error !== 'interrupted') {
         console.warn('SpeechSynthesis error:', e.error);
       }
-      if (activeUtterances.length === 0 && !window.speechSynthesis.speaking) {
-        isSpeaking = false;
-        isPaused = false;
-        clearInterval(speechKeepAliveInterval);
-        speechKeepAliveInterval = null;
-        docyInterrupt.setCurrentSpeakingText('');
-        docyInterrupt.stop();
-        updatePlayButtonState();
-      }
+      if (isPaused) return;
+      finish();
     };
 
     // Retain in memory to prevent Chrome utterance GC bug
@@ -1522,9 +1563,14 @@
       } catch {}
     }
     // 3. Browser SpeechSynthesis path
-    if (window.speechSynthesis && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
+    if (currentSpeakingItem) {
+      clientSpeechQueue.unshift(currentSpeakingItem);
+      currentSpeakingItem = null;
+    }
+    isClientSpeechPlaying = false;
+    if (window.speechSynthesis) {
       try {
-        window.speechSynthesis.pause();
+        window.speechSynthesis.cancel();
       } catch {}
     }
     updatePlayButtonState();
@@ -1547,14 +1593,17 @@
       updateHUDStatus('🔊 Speaking with local Chatterbox…');
       return;
     }
-    if (window.speechSynthesis && window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
+    if (clientSpeechQueue.length > 0) {
+      playNextSpeechSentence();
       updatePlayButtonState();
       updateHUDStatus('🔊 Speaking explanation…');
     }
   }
 
   function stopSpeech(releaseMic = false) {
+    clientSpeechQueue = [];
+    isClientSpeechPlaying = false;
+    currentSpeakingItem = null;
     docyInterrupt.stop(releaseMic);
     docyInterrupt.setCurrentSpeakingText('');
     if (chatterboxEnabled && activePort) {
