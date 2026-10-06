@@ -120,17 +120,46 @@ function initPortInput() {
 
 function initDocyMicStatus() {
   const docyMicEl = document.getElementById('docy-mic-status');
+  const enableMicBtn = document.getElementById('enable-mic-btn');
   if (!docyMicEl) return;
 
   chrome.storage.local.get(['docvexMicEnabled'], (result) => {
     if (result?.docvexMicEnabled) {
       docyMicEl.textContent = '🎙️ Active';
       docyMicEl.className = 'status-val indicator-mic';
+      if (enableMicBtn) {
+        enableMicBtn.textContent = '✓ Microphone Allowed';
+        enableMicBtn.classList.add('saved');
+      }
     } else {
       docyMicEl.textContent = 'Not enabled';
       docyMicEl.className = 'status-val indicator-mic-off';
+      if (enableMicBtn) {
+        enableMicBtn.textContent = '🎙️ Enable / Test Microphone';
+        enableMicBtn.classList.remove('saved');
+      }
     }
   });
+
+  if (enableMicBtn && !enableMicBtn.dataset.bound) {
+    enableMicBtn.dataset.bound = 'true';
+    enableMicBtn.addEventListener('click', async () => {
+      enableMicBtn.textContent = 'Requesting access…';
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop());
+        chrome.storage.local.set({ docvexMicEnabled: true });
+        initDocyMicStatus();
+      } catch (err) {
+        console.warn('Microphone permission error:', err);
+        chrome.storage.local.set({ docvexMicEnabled: false });
+        docyMicEl.textContent = 'Blocked / Denied';
+        docyMicEl.className = 'status-val indicator-offline';
+        enableMicBtn.textContent = '✕ Mic Blocked in Browser Settings';
+        enableMicBtn.style.borderColor = '#f87171';
+      }
+    });
+  }
 }
 
 function initDebugToggle() {

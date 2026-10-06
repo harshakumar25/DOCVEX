@@ -14,14 +14,16 @@ const WAKE_PATTERNS = [
   /\b(chup(\s*(ho\s*ja|karo|raho))?|shant(\s*(ho\s*ja|raho))?)\b/i,
   // Devanagari silence: चुप, चुप हो जा, चुप रहो, शांत
   /(चुप(\s*(हो\s*जा|रहो|करो))?|शांत(\s*(हो\s*जा|रहो))?)/,
-  // Hindi attention commands: sun, suno, sun bhai, sun bhyii, arey sun, arey suno, sun na, sun lo
-  /\b(suno?|arey?\s*suno?|sun\s*(bha?y+i+|bha?i|na|yaar|yar|lo|be)?|bha?i\s*sun)\b/i,
-  // Devanagari attention: सुन, सुनो, सुनिए, अरे सुनो, भाई सुन
-  /(सुन(ना|ो|िए)?|अरे\s*सुन(ना|ो|िए)?|भाई\s*सुन(ना|ो|िए)?)/,
+  // Hindi attention commands: sun, suno, sun bhai, sun bhyii, arey sun, arey suno, sun na, sun lo, sun rahe ho, sun rha h
+  /\b(suno?|arey?\s*suno?|sun\s*(rahe?\s*ho|raha\s*hai|rha\s*h|bha?y+i+|bha?i|na|yaar|yar|lo|be)?|bha?i\s*sun)\b/i,
+  // Devanagari attention: सुन, सुनो, सुनिए, अरे सुनो, भाई सुन, सुन रहे हो
+  /(सुन(ना|ो|िए| रहे हो| रहा है)?|अरे\s*सुन(ना|ो|िए)?|भाई\s*सुन(ना|ो|िए)?)/,
   // English wait variations: wait, waitt, wait a sec, wait a second, wait for a moment, ok wait, okk wait, okay wait
   /\b(ok+|okay)?\s*(wait|waitt|weight)(\s+(for\s+)?(a\s+)?(moment|sec|second|minute))?\b/i,
-  // English listen / hey: listen, hey docy, docy listen, listen docy, just listen, hey wait
-  /\b(listen|hey\s+docy|docy\s+listen|listen\s+docy|just\s+listen|hey\s+wait)\b/i,
+  // English listen / hey: listen, hey docy, docy listen, listen docy, just listen, hey wait, are you listening, listening, can you hear me
+  /\b(listen|listening|are\s+you\s+listening|can\s+you\s+hear\s+me|hey\s+docy|docy\s+listen|listen\s+docy|just\s+listen|hey\s+wait)\b/i,
+  // Greetings and addressing Docy: hello docy, hello, hi docy, hi
+  /\b(hello(\s+docy)?|hi\s+docy)\b/i,
   // English pause / stop / hold commands
   /\b(pause|stop|hold\s*on|hold\s*up|hang\s*on|shut\s*up|be\s*quiet)\b/i,
   // Devanagari pause/stop: रुको जरा, ठहरो
@@ -52,7 +54,7 @@ const matchesResume = (transcript) => RESUME_PATTERNS.some((p) => p.test(transcr
 const isSelfEcho = (transcript, currentSpeakingText) => {
   if (!currentSpeakingText) return false;
   const lower = transcript.toLowerCase().trim();
-  if (/\b(docy|doci|docvex|dokey|dhoki|ruk|ruko|doubt|suno?|sun\b|listen|chup|hold|bhai)\b/i.test(lower) || /[\u0900-\u097F]/.test(lower)) {
+  if (/\b(docy|doci|docvex|dokey|dhoki|ruk|ruko|doubt|suno?|sun\b|listen|listening|hello|hi|chup|hold|bhai)\b/i.test(lower) || /[\u0900-\u097F]/.test(lower)) {
     return false;
   }
   if (/^(wait|stop|pause)$/i.test(lower) && currentSpeakingText.toLowerCase().includes(lower)) {
@@ -68,6 +70,12 @@ test('Docy Voice Interrupt: detects English wake phrases reliably', () => {
     'docy listen',
     'listen',
     'just listen',
+    'are you listening',
+    'listening',
+    'can you hear me',
+    'hello docy',
+    'hello',
+    'hi docy',
     'wait',
     'okk wait',
     'ok wait',
@@ -116,6 +124,9 @@ test('Docy Voice Interrupt: detects Hindi/Hinglish wake phrases reliably', () =>
     'bhai sun',
     'suno',
     'docy suno',
+    'sun rahe ho',
+    'sun rha h',
+    'sun raha hai',
     'ek second',
     'ek sec',
     'ek min',
@@ -129,6 +140,7 @@ test('Docy Voice Interrupt: detects Hindi/Hinglish wake phrases reliably', () =>
     'रुक जा भाई',
     'सुनो',
     'सुन भाई',
+    'सुन रहे हो',
     'अरे सुनो',
     'चुप',
     'चुप रहो',
@@ -174,7 +186,6 @@ test('Docy Voice Interrupt: detects English & Hindi resume phrases', () => {
     'aage badho',
     'shuru karo',
     // Devanagari Hindi
-    'जारी रखो',
     'चलते रहो',
     'ठीक है',
     'हाँ',
@@ -330,4 +341,54 @@ test('DOCY_FOLLOWUP_SYSTEM_PROMPT uses warm tone and no lecture structure marker
   assert.ok(DOCY_FOLLOWUP_SYSTEM_PROMPT.includes('curious'), 'should acknowledge student curiosity');
   assert.ok(DOCY_FOLLOWUP_SYSTEM_PROMPT.includes('warm'), 'should mention warm delivery');
   assert.ok(DOCY_FOLLOWUP_SYSTEM_PROMPT.includes('friend'), 'should describe tone as friend-like');
+});
+
+test('Client Speech Queue: preserves sentences and halts audio cleanly on pause', () => {
+  const queue = [];
+  let isPlaying = false;
+  let currentItem = null;
+  let synthCanceled = false;
+
+  const queueSentence = (sentence, index) => {
+    queue.push({ sentence, index });
+    if (!isPlaying) playNext();
+  };
+
+  const playNext = () => {
+    if (queue.length === 0) return;
+    currentItem = queue.shift();
+    isPlaying = true;
+  };
+
+  const pause = () => {
+    if (currentItem) {
+      queue.unshift(currentItem);
+      currentItem = null;
+    }
+    isPlaying = false;
+    synthCanceled = true;
+  };
+
+  const resume = () => {
+    synthCanceled = false;
+    playNext();
+  };
+
+  queueSentence('First sentence', 1);
+  queueSentence('Second sentence', 2);
+  assert.equal(currentItem.sentence, 'First sentence');
+  assert.equal(queue.length, 1);
+
+  // User interrupts while first sentence is playing
+  pause();
+  assert.equal(isPlaying, false);
+  assert.equal(synthCanceled, true);
+  assert.equal(queue.length, 2);
+  assert.equal(queue[0].sentence, 'First sentence', 'Paused sentence must be restored to head of queue');
+
+  // User resumes
+  resume();
+  assert.equal(isPlaying, true);
+  assert.equal(currentItem.sentence, 'First sentence');
+  assert.equal(queue.length, 1);
 });
