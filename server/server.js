@@ -168,6 +168,7 @@ export const createServer = (options = {}) => {
     // Health Check Endpoint
     if (req.method === 'GET' && pathname === '/health') {
       const ollama = await checkOllamaStatus(serverConfig.OLLAMA_HOST, serverConfig.OLLAMA_MODEL);
+      const chatterbox = getChatterboxProvider(serverConfig);
       return sendJson(res, 200, {
         status: 'ok',
         service: 'DocVex Local Tutor',
@@ -175,6 +176,11 @@ export const createServer = (options = {}) => {
         groq: {
           configured: Boolean(serverConfig.GROQ_API_KEY && serverConfig.GROQ_API_KEY.trim().length > 0),
           model: serverConfig.GROQ_MODEL,
+        },
+        chatterbox: {
+          enabled: Boolean(serverConfig.CHATTERBOX_ENABLED),
+          model: serverConfig.CHATTERBOX_MODEL,
+          ready: Boolean(chatterbox?.isReady?.()),
         },
         defaultProvider: serverConfig.DEFAULT_PROVIDER,
       }, req);
@@ -381,5 +387,16 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   });
   server.listen(config.PORT, config.HOST, () => {
     console.log(`DocVex server listening on http://${config.HOST}:${config.PORT}`);
+    if (config.CHATTERBOX_ENABLED) {
+      const chatterbox = getChatterboxProvider(config);
+      if (chatterbox) {
+        console.log(`[DocVex] Pre-warming local Chatterbox (${config.CHATTERBOX_MODEL} on ${config.CHATTERBOX_DEVICE})…`);
+        chatterbox.start().then(() => {
+          console.log('[DocVex] Local Chatterbox ready for instant speech synthesis.');
+        }).catch((err) => {
+          console.warn('[DocVex] Chatterbox pre-warm warning:', err.message);
+        });
+      }
+    }
   });
 }

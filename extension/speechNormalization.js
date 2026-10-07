@@ -1,4 +1,10 @@
-const DEFAULT_SPEECH_DICTIONARY = Object.freeze({
+/**
+ * DocVex — Speech Phonetic Normalization
+ * Translates programming syntax, complexity notation, and acronyms
+ * into natural spoken equivalents for acoustic synthesis engines.
+ */
+
+export const DEFAULT_SPEECH_DICTIONARY = Object.freeze({
   'O(n log n)': 'order of n log n',
   'O(1)': 'O of one',
   'O(n)': 'O of n',
@@ -79,22 +85,11 @@ const DEFAULT_SPEECH_DICTIONARY = Object.freeze({
   'arr[mid]': 'array at mid',
   'nums[mid]': 'numbers at mid',
   '&&': 'and',
-  '&': 'and',
   '||': 'or',
   '+=': 'plus equals',
   '-=': 'minus equals',
   nullptr: 'null pointer',
   DP: 'D P',
-  GraphRAG: 'graph rag',
-  GraphRag: 'graph rag',
-  RAG: 'R A G',
-  'auto-parse': 'auto parse',
-  'Auto-Parse': 'auto parse',
-  AutoParse: 'auto parse',
-  'dual-platform': 'dual platform',
-  'Dual-Platform': 'dual platform',
-  'post-simulation': 'post simulation',
-  'Post-Simulation': 'post simulation',
 });
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -103,17 +98,6 @@ export const normalizeSpeechText = (text, dictionary = DEFAULT_SPEECH_DICTIONARY
   if (typeof text !== 'string' || !text.trim()) return '';
 
   let normalized = text;
-
-  // 1. Separate camelCase technical compound words (e.g., ReportAgent -> Report Agent)
-  normalized = normalized.replace(/([a-z])([A-Z])/g, '$1 $2');
-
-  // 2. Normalize section/step number markers (e.g., "02\nEnvironment" -> "Step 2: Environment")
-  normalized = normalized.replace(/(?:^|\n)\s*0?([1-9]\d?)\s*[\r\n]+(?=[A-Za-z])/g, '\nStep $1: ');
-  normalized = normalized.replace(/(?:^|\n)\s*0?([1-9]\d?)\s*[-.:]\s*(?=[A-Za-z])/g, '\nStep $1: ');
-
-  // 3. Normalize standalone ampersands
-  normalized = normalized.replace(/\s*&\s*/g, ' and ');
-
   const entries = Object.entries(dictionary).sort(([left], [right]) => right.length - left.length);
   for (const [term, pronunciation] of entries) {
     const pattern = /\W/.test(term)
@@ -126,5 +110,3 @@ export const normalizeSpeechText = (text, dictionary = DEFAULT_SPEECH_DICTIONARY
   normalized = normalized.replace(/\s+/g, ' ').trim();
   return normalized;
 };
-
-export { DEFAULT_SPEECH_DICTIONARY };

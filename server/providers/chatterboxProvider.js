@@ -49,6 +49,7 @@ export class ChatterboxProvider {
     this.jobs = [];
     this.activeJob = null;
     this.jobsById = new Map();
+    this.ready = false;
   }
 
   async start() {
@@ -102,6 +103,7 @@ export class ChatterboxProvider {
           reject(workerError);
         }
         this.failAll(providerError('Chatterbox worker exited.', 503, 'CHATTERBOX_EXITED'));
+        this.ready = false;
         this.child = null;
         this.readyPromise = null;
       });
@@ -109,6 +111,7 @@ export class ChatterboxProvider {
       this.onReady = (message) => {
         if (settled) return;
         settled = true;
+        this.ready = true;
         clearTimeout(startupTimer);
         resolve(message);
         this.pump();
@@ -279,6 +282,7 @@ export class ChatterboxProvider {
   }
 
   stop() {
+    this.ready = false;
     this.inputClosed = true;
     this.failAll(providerError('Chatterbox worker stopped.', 503, 'CHATTERBOX_STOPPED'));
     if (this.child && !this.child.killed) {
@@ -296,5 +300,9 @@ export class ChatterboxProvider {
     }
     this.child = null;
     this.readyPromise = null;
+  }
+
+  isReady() {
+    return Boolean(this.ready && !this.inputClosed && this.child && !this.child.killed);
   }
 }
