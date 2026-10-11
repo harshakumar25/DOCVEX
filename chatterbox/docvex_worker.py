@@ -96,11 +96,10 @@ def load_model(model_name: str, device: str, voice_prompt_path: Path | None = No
     ref_voice = voice_prompt_path
     if ref_voice is None:
         voices_dir = CHECKOUT_ROOT / "voices"
-        # Prefer the highest-quality reference in order
+        # Prefer the highest-quality natural reference in order
         for candidate in (
             "studio_male_voiceover.wav",
             "human_male_narrator.wav",
-            "teacher_daniel.wav",
         ):
             candidate_path = voices_dir / candidate
             if candidate_path.exists():

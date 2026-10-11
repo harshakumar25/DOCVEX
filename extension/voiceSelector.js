@@ -5,7 +5,7 @@
  */
 
 export const BANNED_ROBOTIC_VOICE_NAMES = Object.freeze(new Set([
-  'alex', 'albert', 'fred', 'ralph', 'junior',
+  'daniel', 'alex', 'albert', 'fred', 'ralph', 'junior',
   'bad news', 'bahh', 'bells', 'boing', 'bubbles',
   'cellos', 'deranged', 'good news', 'hysterical', 'jester',
   'organ', 'superstar', 'trinoids', 'whisper', 'wobble', 'zarvox',
