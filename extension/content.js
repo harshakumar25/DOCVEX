@@ -757,11 +757,11 @@
       .hud-card {
         width: 360px;
         max-width: calc(100vw - 48px);
-        background: #0f172a;
-        color: #f8fafc;
-        border: 1px solid #334155;
+        background: #000000;
+        color: #ffffff;
+        border: 1px solid rgba(44, 52, 128, 0.5);
         border-radius: 16px;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 20px 30px -5px rgba(0, 0, 0, 0.8), 0 0 24px rgba(44, 52, 128, 0.25);
         padding: 16px;
         font-size: 14px;
         line-height: 1.5;
@@ -778,7 +778,7 @@
         justify-content: space-between;
         margin-bottom: 12px;
         padding-bottom: 10px;
-        border-bottom: 1px solid #1e293b;
+        border-bottom: 1px solid rgba(44, 52, 128, 0.3);
       }
       .hud-title {
         display: flex;
@@ -786,16 +786,16 @@
         gap: 8px;
         font-weight: 700;
         font-size: 15px;
-        color: #e2e8f0;
+        color: #ffffff;
       }
       .hud-badge {
         font-size: 11px;
         font-weight: 600;
         padding: 2px 8px;
         border-radius: 9999px;
-        background: #1e1b4b;
-        color: #818cf8;
-        border: 1px solid #3730a3;
+        background: #2C3480;
+        color: #ffffff;
+        border: 1px solid #5d6eff;
       }
       .hud-close {
         background: transparent;
@@ -851,7 +851,7 @@
       }
       .eq-bar {
         width: 3px;
-        background: #38bdf8;
+        background: #2C3480;
         border-radius: 2px;
         animation: docvex-eq 0.8s ease-in-out infinite alternate;
       }
@@ -865,7 +865,7 @@
       .hud-content {
         max-height: 240px;
         overflow-y: auto;
-        color: #e2e8f0;
+        color: #ffffff;
         font-size: 13.5px;
         margin-bottom: 14px;
         white-space: pre-wrap;
@@ -876,7 +876,7 @@
         width: 4px;
       }
       .hud-content::-webkit-scrollbar-thumb {
-        background: #475569;
+        background: #2C3480;
         border-radius: 4px;
       }
       .hud-controls {
@@ -899,11 +899,12 @@
         transition: background 0.15s ease;
       }
       .btn-primary {
-        background: #4f46e5;
+        background: #2C3480;
         color: #ffffff;
+        border: 1px solid #5d6eff;
       }
       .btn-primary:hover {
-        background: #4338ca;
+        background: #3b45a6;
       }
       .btn-danger {
         background: #7f1d1d;
@@ -914,29 +915,29 @@
         background: #991b1b;
       }
       .btn-secondary {
-        background: #1e293b;
-        color: #cbd5e1;
-        border: 1px solid #334155;
+        background: #080c18;
+        color: #e2e8f0;
+        border: 1px solid rgba(44, 52, 128, 0.4);
       }
       .btn-secondary:hover {
-        background: #334155;
+        background: #141b33;
         color: #ffffff;
       }
       .btn-secondary.active {
-        background: #064e3b;
-        color: #34d399;
-        border-color: #059669;
+        background: #2C3480;
+        color: #ffffff;
+        border-color: #5d6eff;
       }
       .sources-list {
         margin-top: 10px;
         padding-top: 8px;
-        border-top: 1px solid #1e293b;
+        border-top: 1px solid rgba(44, 52, 128, 0.25);
         font-size: 11.5px;
         color: #94a3b8;
       }
       .source-link {
         display: inline-block;
-        color: #38bdf8;
+        color: #7b8bff;
         text-decoration: none;
         margin-right: 8px;
         margin-top: 4px;
@@ -956,13 +957,13 @@
       .insights-container {
         margin-top: 12px;
         padding-top: 10px;
-        border-top: 1px solid #334155;
+        border-top: 1px solid rgba(44, 52, 128, 0.3);
       }
       .insights-shimmer {
         font-size: 11.5px;
-        color: #818cf8;
-        background: rgba(99, 102, 241, 0.1);
-        border: 1px dashed rgba(99, 102, 241, 0.35);
+        color: #7b8bff;
+        background: rgba(44, 52, 128, 0.15);
+        border: 1px dashed rgba(44, 52, 128, 0.5);
         border-radius: 8px;
         padding: 8px 10px;
         display: flex;
@@ -975,13 +976,13 @@
         50% { opacity: 1; }
       }
       .insights-card {
-        background: #090d16;
-        border: 1px solid #3b82f6;
+        background: #000000;
+        border: 1px solid #2C3480;
         border-radius: 8px;
         padding: 10px 12px;
         font-size: 12px;
         line-height: 1.5;
-        color: #e2e8f0;
+        color: #ffffff;
       }
       .insights-header {
         display: flex;
@@ -2006,7 +2007,7 @@
         floatingBtn.id = 'docvex-floating-trigger';
         floatingBtn.style.position = 'fixed';
         floatingBtn.style.zIndex = '2147483646';
-        floatingBtn.style.background = '#4f46e5';
+        floatingBtn.style.background = '#2C3480';
         floatingBtn.style.color = '#ffffff';
         floatingBtn.style.padding = '6px 14px';
         floatingBtn.style.borderRadius = '20px';
@@ -2014,8 +2015,8 @@
         floatingBtn.style.fontWeight = '600';
         floatingBtn.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         floatingBtn.style.cursor = 'pointer';
-        floatingBtn.style.boxShadow = '0 4px 14px rgba(0,0,0,0.35)';
-        floatingBtn.style.border = '1px solid #6366f1';
+        floatingBtn.style.boxShadow = '0 4px 14px rgba(0,0,0,0.5), 0 0 12px rgba(44, 52, 128, 0.4)';
+        floatingBtn.style.border = '1px solid #5d6eff';
         floatingBtn.style.userSelect = 'none';
         floatingBtn.textContent = 'Explain this (⌃⇧S)';
 

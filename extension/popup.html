@@ -12,8 +12,8 @@
     body {
       width: 330px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f172a;
-      color: #f8fafc;
+      background: #000000;
+      color: #ffffff;
       padding: 16px;
       font-size: 13px;
     }
@@ -23,7 +23,7 @@
       justify-content: space-between;
       margin-bottom: 14px;
       padding-bottom: 10px;
-      border-bottom: 1px solid #334155;
+      border-bottom: 1px solid rgba(44, 52, 128, 0.4);
     }
     .title {
       display: flex;
@@ -31,20 +31,20 @@
       gap: 8px;
       font-size: 15px;
       font-weight: 700;
-      color: #e2e8f0;
+      color: #ffffff;
     }
     .badge {
       font-size: 11px;
       font-weight: 600;
       padding: 2px 8px;
       border-radius: 9999px;
-      background: #1e1b4b;
-      color: #818cf8;
-      border: 1px solid #3730a3;
+      background: #2C3480;
+      color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.2);
     }
     .control-box {
-      background: #1e293b;
-      border: 1px solid #334155;
+      background: #080c18;
+      border: 1px solid rgba(44, 52, 128, 0.35);
       border-radius: 10px;
       padding: 12px;
       margin-bottom: 12px;
@@ -58,9 +58,9 @@
     }
     .provider-select {
       width: 100%;
-      background: #0f172a;
-      color: #f8fafc;
-      border: 1px solid #475569;
+      background: #020308;
+      color: #ffffff;
+      border: 1px solid rgba(44, 52, 128, 0.4);
       border-radius: 6px;
       padding: 8px 10px;
       font-size: 12px;
@@ -69,17 +69,18 @@
       cursor: pointer;
     }
     .provider-select:focus {
-      border-color: #6366f1;
+      border-color: #5d6eff;
+      box-shadow: 0 0 8px rgba(44, 52, 128, 0.6);
     }
     .provider-hint {
       font-size: 11px;
-      color: #94a3b8;
+      color: #9da5bd;
       margin-top: 6px;
       line-height: 1.4;
     }
     .status-card {
-      background: #1e293b;
-      border: 1px solid #334155;
+      background: #080c18;
+      border: 1px solid rgba(44, 52, 128, 0.35);
       border-radius: 10px;
       padding: 12px;
       margin-bottom: 12px;
@@ -94,7 +95,7 @@
       margin-bottom: 0;
     }
     .status-label {
-      color: #94a3b8;
+      color: #9da5bd;
       font-size: 12px;
     }
     .status-val {
@@ -108,30 +109,30 @@
       color: #f87171;
     }
     .shortcut-box {
-      background: #1e1b4b;
-      border: 1px solid #3730a3;
+      background: #080c18;
+      border: 1px solid rgba(44, 52, 128, 0.45);
       border-radius: 8px;
       padding: 10px;
       text-align: center;
       margin-bottom: 12px;
     }
     .shortcut-text {
-      color: #c7d2fe;
+      color: #cbd5e1;
       font-size: 12px;
       margin-bottom: 6px;
     }
     kbd {
-      background: #312e81;
+      background: #2C3480;
       color: #ffffff;
       padding: 3px 8px;
       border-radius: 4px;
       font-weight: 700;
       font-size: 12px;
-      border: 1px solid #4338ca;
+      border: 1px solid rgba(255, 255, 255, 0.2);
     }
     .refresh-btn {
       width: 100%;
-      background: #4f46e5;
+      background: #2C3480;
       color: #ffffff;
       border: none;
       padding: 8px;
@@ -139,10 +140,12 @@
       font-weight: 600;
       cursor: pointer;
       font-size: 12px;
-      transition: background 0.15s ease;
+      transition: all 0.15s ease;
+      box-shadow: 0 0 12px rgba(44, 52, 128, 0.5);
     }
     .refresh-btn:hover {
-      background: #4338ca;
+      background: #3f4aae;
+      box-shadow: 0 0 16px rgba(44, 52, 128, 0.8);
     }
     .port-row {
       display: flex;
@@ -152,14 +155,14 @@
     }
     .port-label {
       font-size: 11px;
-      color: #94a3b8;
+      color: #9da5bd;
       white-space: nowrap;
     }
     .port-input {
       flex: 1;
-      background: #0f172a;
-      color: #f8fafc;
-      border: 1px solid #475569;
+      background: #020308;
+      color: #ffffff;
+      border: 1px solid rgba(44, 52, 128, 0.4);
       border-radius: 6px;
       padding: 5px 8px;
       font-size: 12px;
@@ -168,12 +171,12 @@
       width: 70px;
     }
     .port-input:focus {
-      border-color: #6366f1;
+      border-color: #5d6eff;
     }
     .port-save-btn {
-      background: #1e293b;
-      color: #94a3b8;
-      border: 1px solid #334155;
+      background: #080c18;
+      color: #cbd5e1;
+      border: 1px solid rgba(44, 52, 128, 0.35);
       padding: 5px 10px;
       border-radius: 6px;
       font-size: 11px;
@@ -183,8 +186,8 @@
       transition: all 0.15s ease;
     }
     .port-save-btn:hover {
-      background: #334155;
-      color: #e2e8f0;
+      background: #2C3480;
+      color: #ffffff;
     }
     .port-save-btn.saved {
       color: #4ade80;
