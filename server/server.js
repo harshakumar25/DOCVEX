@@ -1,11 +1,16 @@
 import http from 'node:http';
 import { createReadStream, readFileSync, statSync } from 'node:fs';
+import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { getChatterboxProvider, teachPipeline, streamTeachPipeline } from './pipeline.js';
+import { DEFAULT_TRUSTED_DOMAINS } from './retrieval/trustedSources.js';
+import { listPlugins, executePlugin, setPluginEnabled } from './plugins/pluginManager.js';
 
-// Origin security: Only allow requests from chrome-extension:// origins or non-browser clients (service worker, curl)
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1', '0.0.0.0']);
+
+// Origin security: Only allow requests from chrome-extension:// origins, local dashboard origins (localhost / 127.0.0.1 / ::1), or non-browser clients (service worker, curl)
 const applyOriginSecurity = (req, res) => {
   const origin = req.headers.origin;
   if (!origin) {
@@ -17,6 +22,15 @@ const applyOriginSecurity = (req, res) => {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-DocVex-Extension-Origin, Accept');
     return true;
   }
+  try {
+    const parsedOrigin = new URL(origin);
+    if (LOCAL_HOSTNAMES.has(parsedOrigin.hostname)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-DocVex-Extension-Origin, Accept');
+      return true;
+    }
+  } catch {}
   return false;
 };
 
@@ -236,16 +250,174 @@ export const createServer = (options = {}) => {
       }
     }
 
-    // Interactive Demo Test Bench Endpoint
-    if (req.method === 'GET' && (pathname === '/demo' || pathname === '/')) {
+    // System Stats Endpoint
+    if (req.method === 'GET' && pathname === '/api/system/stats') {
+      const ollama = await checkOllamaStatus(serverConfig.OLLAMA_HOST, serverConfig.OLLAMA_MODEL);
+      const chatterbox = getChatterboxProvider(serverConfig);
+      return sendJson(res, 200, {
+        status: 'ok',
+        service: 'DocVex Local Tutor',
+        uptimeSeconds: Math.floor(process.uptime()),
+        nodeVersion: process.version,
+        memoryMb: Math.round(process.memoryUsage().heapUsed / (1024 * 1024)),
+        config: {
+          host: serverConfig.HOST,
+          port: serverConfig.PORT,
+          defaultProvider: serverConfig.DEFAULT_PROVIDER,
+          maxSelectionLength: serverConfig.MAX_SELECTION_LENGTH,
+          retrievalTimeoutMs: serverConfig.RETRIEVAL_TIMEOUT_MS,
+        },
+        providers: {
+          ollama,
+          groq: {
+            configured: Boolean(serverConfig.GROQ_API_KEY && serverConfig.GROQ_API_KEY.trim().length > 0),
+            model: serverConfig.GROQ_MODEL,
+          },
+          chatterbox: {
+            enabled: Boolean(serverConfig.CHATTERBOX_ENABLED),
+            model: serverConfig.CHATTERBOX_MODEL,
+            device: serverConfig.CHATTERBOX_DEVICE,
+            ready: Boolean(chatterbox?.isReady?.()),
+            tempDir: serverConfig.CHATTERBOX_TEMP_DIR,
+          },
+        },
+      }, req);
+    }
+
+    // Retrieval Allowlist Domains Endpoint
+    if (req.method === 'GET' && pathname === '/api/retrieval/domains') {
+      return sendJson(res, 200, {
+        domains: DEFAULT_TRUSTED_DOMAINS,
+        count: DEFAULT_TRUSTED_DOMAINS.length,
+      }, req);
+    }
+
+    // Audio Cache Purge Endpoint
+    if (req.method === 'POST' && pathname === '/api/cache/purge') {
+      const tempDir = serverConfig.CHATTERBOX_TEMP_DIR;
+      let filesPurged = 0;
+      let bytesFreed = 0;
+      try {
+        const entries = await fsPromises.readdir(tempDir);
+        for (const entry of entries) {
+          if (entry.endsWith('.wav')) {
+            const fullPath = path.join(tempDir, entry);
+            try {
+              const st = await fsPromises.stat(fullPath);
+              bytesFreed += st.size;
+              await fsPromises.unlink(fullPath);
+              filesPurged += 1;
+            } catch {}
+          }
+        }
+      } catch {
+        // Temp directory does not exist or has no wav files
+      }
+      return sendJson(res, 200, {
+        success: true,
+        filesPurged,
+        bytesFreed,
+      }, req);
+    }
+
+    // Plugins Registry Endpoint
+    if (req.method === 'GET' && pathname === '/api/plugins') {
+      const plugins = listPlugins();
+      return sendJson(res, 200, {
+        success: true,
+        plugins,
+        count: plugins.length,
+      }, req);
+    }
+
+    // Plugin Execution Endpoint
+    if (req.method === 'POST' && pathname === '/api/plugins/execute') {
+      let body;
+      try {
+        body = await parseJsonBody(req);
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message }, req);
+      }
+
+      const { pluginId, input } = body;
+      if (!pluginId || typeof pluginId !== 'string') {
+        return sendJson(res, 400, { error: 'Missing or invalid "pluginId" parameter.' }, req);
+      }
+
+      const result = executePlugin(pluginId, input || {});
+      const statusCode = result.success ? 200 : 400;
+      return sendJson(res, statusCode, result, req);
+    }
+
+    // Plugin Toggle Enabled Endpoint
+    if (req.method === 'POST' && pathname === '/api/plugins/toggle') {
+      let body;
+      try {
+        body = await parseJsonBody(req);
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message }, req);
+      }
+
+      const { pluginId, enabled } = body;
+      if (!pluginId || typeof pluginId !== 'string' || typeof enabled !== 'boolean') {
+        return sendJson(res, 400, { error: 'Missing "pluginId" string or "enabled" boolean.' }, req);
+      }
+
+      const updated = setPluginEnabled(pluginId, enabled);
+      if (!updated) {
+        return sendJson(res, 404, { error: `Plugin "${pluginId}" not found.` }, req);
+      }
+      return sendJson(res, 200, { success: true, plugin: updated }, req);
+    }
+
+    // Interactive Dashboard & Test Bench Endpoint
+    if ((req.method === 'GET' || req.method === 'HEAD') && (pathname === '/demo' || pathname === '/demo.html' || pathname === '/' || pathname === '/dashboard')) {
       try {
         const demoPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../demo.html');
         const html = readFileSync(demoPath, 'utf8');
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        if (req.method === 'HEAD') {
+          res.end();
+          return;
+        }
         res.end(html);
         return;
       } catch {
-        return sendJson(res, 404, { error: 'Demo page not found.' }, req);
+        return sendJson(res, 404, { error: 'Dashboard page not found.' }, req);
+      }
+    }
+
+    // PWA Manifest Endpoint
+    if ((req.method === 'GET' || req.method === 'HEAD') && pathname === '/manifest.webmanifest') {
+      try {
+        const manifestPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../manifest.webmanifest');
+        const manifest = readFileSync(manifestPath, 'utf8');
+        res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8' });
+        if (req.method === 'HEAD') {
+          res.end();
+          return;
+        }
+        res.end(manifest);
+        return;
+      } catch {
+        return sendJson(res, 404, { error: 'Manifest not found.' }, req);
+      }
+    }
+
+    // PWA Service Worker Endpoint
+    if ((req.method === 'GET' || req.method === 'HEAD') && pathname === '/sw.js') {
+      try {
+        const swPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../sw.js');
+        const swCode = readFileSync(swPath, 'utf8');
+        res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8' });
+        if (req.method === 'HEAD') {
+          res.end();
+          return;
+        }
+        res.end(swCode);
+        return;
+      } catch {
+        return sendJson(res, 404, { error: 'Service worker not found.' }, req);
       }
     }
 
@@ -300,7 +472,7 @@ export const createServer = (options = {}) => {
           }
         });
 
-        if (req.headers.origin && req.headers.origin.startsWith('chrome-extension://')) {
+        if (req.headers.origin && isOriginAllowed) {
           res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
         }
         res.writeHead(200, {

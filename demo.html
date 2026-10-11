@@ -3,303 +3,4996 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DocVex — Interactive Test Bench</title>
+  <title>DocVex — Neumorphic Acoustic Learning Dashboard</title>
+  <meta name="description" content="Local-first acoustic technical tutor dashboard for developers. Hear documentation and code converted to spatial mental models.">
+  <meta name="theme-color" content="#0c1017">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #0b0f19;
-      --card-bg: #131b2e;
-      --card-border: #1e293b;
-      --primary: #6366f1;
-      --primary-hover: #4f46e5;
-      --accent: #10b981;
-      --text: #f8fafc;
+      /* Neumorphic Dark Palette */
+      --bg: #0c1017;
+      --neu-base: #111722;
+      --neu-card: #131b28;
+      --neu-surface: #151e2e;
+      --neu-elevated: #182335;
+      --neu-inset: #090e15;
+      
+      /* Neumorphic Shadow Tokens */
+      --shadow-raised: 8px 8px 18px #06090e, -8px -8px 18px #182335;
+      --shadow-raised-sm: 4px 4px 10px #06090e, -4px -4px 10px #1a2538;
+      --shadow-inset: inset 4px 4px 8px #06090e, inset -4px -4px 8px #1a2538;
+      --shadow-inset-deep: inset 6px 6px 12px #05070c, inset -6px -6px 12px #182233;
+      --shadow-pill: 3px 3px 6px #06090e, -3px -3px 6px #1a2538;
+      --shadow-glow-cyan: 0 0 16px rgba(56, 189, 248, 0.35);
+      --shadow-glow-indigo: 0 0 16px rgba(99, 102, 241, 0.4);
+      --shadow-glow-emerald: 0 0 16px rgba(16, 185, 129, 0.35);
+
+      /* Accent & Semantic Colors */
+      --cyan: #38bdf8;
+      --indigo: #6366f1;
+      --purple: #8b5cf6;
+      --emerald: #10b981;
+      --amber: #f59e0b;
+      --rose: #f43f5e;
+      --border-subtle: rgba(255, 255, 255, 0.05);
+
+      /* Typography Tokens */
+      --text-main: #f8fafc;
       --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-mono: 'JetBrains Mono', SFMono-Regular, Consolas, monospace;
     }
+
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
+      -webkit-font-smoothing: antialiased;
     }
+
+    html {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
+      scroll-behavior: smooth;
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       background-color: var(--bg);
-      color: var(--text);
+      color: var(--text-main);
+      font-family: var(--font-body);
       line-height: 1.6;
-      padding: 40px 20px;
-    }
-    .container {
-      max-width: 860px;
-      margin: 0 auto;
-    }
-    header {
-      text-align: center;
-      margin-bottom: 36px;
-    }
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 12px;
-      border-radius: 9999px;
-      background: rgba(99, 102, 241, 0.15);
-      color: #a5b4fc;
-      border: 1px solid rgba(99, 102, 241, 0.3);
-      font-size: 13px;
-      font-weight: 600;
-      margin-bottom: 12px;
-    }
-    h1 {
-      font-size: 2.2rem;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      margin-bottom: 8px;
-      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    p.subtitle {
-      color: var(--text-muted);
-      font-size: 1.05rem;
-    }
-    .instructions-card {
-      background: linear-gradient(135deg, #1e1b4b 0%, #172554 100%);
-      border: 1px solid #3730a3;
-      border-radius: 12px;
-      padding: 20px 24px;
-      margin-bottom: 32px;
+      min-height: 100vh;
+      width: 100%;
+      max-width: 100%;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      overflow-x: hidden;
+      position: relative;
     }
-    .step-list {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--neu-inset);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+
+    /* Top Navigation Shell */
+    header.neu-nav {
+      background: var(--neu-base);
+      box-shadow: 0 6px 16px #06090e;
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       gap: 16px;
-      margin-top: 8px;
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
     }
-    .step-item {
-      background: rgba(15, 23, 42, 0.6);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 8px;
-      padding: 14px;
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      cursor: pointer;
     }
-    .step-num {
-      display: inline-block;
+    .brand-icon-neu {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .brand-icon-neu svg {
       width: 24px;
       height: 24px;
-      line-height: 24px;
-      border-radius: 50%;
-      background: var(--primary);
-      color: #fff;
-      text-align: center;
-      font-weight: 700;
-      font-size: 12px;
-      margin-bottom: 6px;
+      fill: var(--cyan);
+      filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.6));
     }
-    .step-title {
+    .brand-text h1 {
+      font-family: var(--font-display);
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #ffffff 20%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand-tagline {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    /* Role Switcher - Neumorphic Pill Segment */
+    .role-switcher-container {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      padding: 4px;
+      border-radius: 9999px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .role-btn {
+      background: transparent;
+      border: none;
+      outline: none;
+      padding: 8px 18px;
+      border-radius: 9999px;
+      font-family: var(--font-display);
+      font-size: 0.85rem;
       font-weight: 600;
-      font-size: 14px;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .role-btn:hover {
+      color: var(--text-main);
+    }
+    .role-btn.active {
+      background: var(--neu-elevated);
+      color: var(--cyan);
+      box-shadow: var(--shadow-raised-sm);
+    }
+    .role-btn.active.admin {
+      color: var(--amber);
+    }
+    .nav-tab-badge {
+      font-size: 0.68rem;
+      background: var(--neu-inset);
+      color: var(--cyan);
+      padding: 1px 7px;
+      border-radius: 9999px;
+      margin-left: 4px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      box-shadow: var(--shadow-inset);
+    }
+
+    /* Nav Right Telemetry Badges */
+    .nav-telemetry {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .tele-chip {
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised-sm);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tele-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--emerald);
+      box-shadow: 0 0 8px var(--emerald);
+      animation: pulse-dot 2s infinite;
+    }
+    .tele-dot.warning {
+      background: var(--amber);
+      box-shadow: 0 0 8px var(--amber);
+    }
+    .tele-dot.offline {
+      background: var(--rose);
+      box-shadow: 0 0 8px var(--rose);
+      animation: none;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.9); }
+    }
+
+    .icon-action-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised-sm);
+      border: none;
+      outline: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+    .icon-action-btn:hover {
+      color: var(--cyan);
+      transform: translateY(-1px);
+    }
+    .icon-action-btn:active {
+      box-shadow: var(--shadow-inset);
+      transform: translateY(0);
+    }
+
+    /* Main Container */
+    main.app-viewport {
+      max-width: 1380px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 18px 24px 80px;
+      flex: 1;
+      box-sizing: border-box;
+      overflow-x: clip;
+    }
+
+    /* Hero Quote & Philosophy Banner */
+    .hero-manifesto {
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised);
+      border-radius: 18px;
+      padding: 16px 22px;
+      margin-bottom: 22px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+      box-sizing: border-box;
+      min-width: 0;
+    }
+    .hero-manifesto::before {
+      content: '';
+      position: absolute;
+      top: -40px;
+      right: -40px;
+      width: 160px;
+      height: 160px;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .manifesto-quote {
+      max-width: 760px;
+      flex: 1;
+      min-width: 280px;
+    }
+    .manifesto-quote blockquote {
+      font-size: 0.98rem;
+      font-weight: 500;
+      color: #e2e8f0;
+      line-height: 1.45;
+      font-style: italic;
       margin-bottom: 4px;
     }
-    .step-desc {
-      font-size: 12px;
-      color: var(--text-muted);
+    .manifesto-quote blockquote span.highlight {
+      color: var(--cyan);
+      font-weight: 600;
+      font-style: normal;
     }
-    kbd {
-      background: #312e81;
-      color: #ffffff;
+    .manifesto-sub {
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .manifesto-sub code {
+      font-family: var(--font-mono);
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
       padding: 2px 7px;
       border-radius: 4px;
-      font-weight: 700;
-      font-size: 12px;
-      border: 1px solid #4338ca;
+      color: #cbd5e1;
+      font-size: 0.74rem;
     }
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 24px;
-      margin-bottom: 24px;
-      transition: transform 0.15s ease, border-color 0.15s ease;
-    }
-    .card:hover {
-      border-color: #334155;
-    }
-    .card-header {
+    .hero-stats-row {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      margin-bottom: 12px;
+      gap: 12px;
+      flex-wrap: wrap;
     }
-    .card-title {
+    .hero-stat-pill {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border-radius: 12px;
+      padding: 8px 14px;
+      text-align: center;
+      min-width: 78px;
+    }
+    .hero-stat-pill .num {
+      font-family: var(--font-display);
+      font-size: 1.18rem;
+      font-weight: 800;
+      color: var(--cyan);
+      display: block;
+      line-height: 1.2;
+    }
+    .hero-stat-pill .label {
+      font-size: 0.66rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    /* Views Layout */
+    .view-panel {
+      display: none;
+      animation: fadeIn 0.25s ease forwards;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .view-panel.active {
+      display: block;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Studio Grid: Left Input Bench, Right Audio Player */
+    .studio-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+      gap: 24px;
+      margin-bottom: 32px;
+      align-items: start;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    @media (max-width: 1060px) {
+      .studio-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    /* Neumorphic Card Base */
+    .neu-card {
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised);
+      border-radius: 20px;
+      padding: 22px;
+      border: 1px solid var(--border-subtle);
+      position: relative;
+      min-width: 0;
+      box-sizing: border-box;
+      max-width: 100%;
+    }
+
+    /* Section Anchor & Transition Bar */
+    .section-anchor-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised-sm);
+      border-radius: 14px;
+      padding: 12px 20px;
+      margin-bottom: 24px;
+      border: 1px solid var(--border-subtle);
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .section-anchor-title {
+      font-family: var(--font-display);
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-anchor-btn {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: var(--cyan);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .section-anchor-btn:hover {
+      color: #ffffff;
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+    .card-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+    .card-title-row h2 {
+      font-family: var(--font-display);
       font-size: 1.15rem;
       font-weight: 700;
-      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-main);
     }
-    .select-btn {
-      background: rgba(99, 102, 241, 0.15);
-      border: 1px solid rgba(99, 102, 241, 0.4);
-      color: #c7d2fe;
-      padding: 6px 14px;
-      border-radius: 6px;
-      font-size: 12px;
+    .card-badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      color: var(--cyan);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Preset Snippets Chips */
+    .presets-label {
+      font-size: 0.78rem;
       font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+    }
+    .preset-chips-scroll {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 6px;
+      margin-bottom: 16px;
+    }
+    .preset-chip {
+      background: var(--neu-elevated);
+      box-shadow: var(--shadow-raised-sm);
+      border: none;
+      outline: none;
+      border-radius: 12px;
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .preset-chip:hover {
+      color: var(--cyan);
+      transform: translateY(-1px);
+    }
+    .preset-chip:active {
+      box-shadow: var(--shadow-inset);
+      transform: translateY(0);
+    }
+
+    /* Debossed Inputs */
+    .neu-input-wrap {
+      margin-bottom: 16px;
+    }
+    .neu-input-wrap label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .neu-chip-action-btn {
+      background: var(--neu-elevated);
+      box-shadow: var(--shadow-raised-sm);
+      border: 1px solid var(--border-subtle);
+      border-radius: 9999px;
+      padding: 3px 10px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s ease;
+    }
+    .neu-chip-action-btn:hover {
+      color: var(--cyan);
+      border-color: rgba(56, 189, 248, 0.4);
+      transform: translateY(-1px);
+    }
+    .neu-chip-action-btn.recording {
+      color: var(--rose);
+      border-color: var(--rose);
+      background: rgba(244, 63, 94, 0.15);
+      animation: pulse-dot 1s infinite;
+    }
+    .neu-textarea {
+      width: 100%;
+      height: 140px;
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset-deep);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 14px;
+      color: var(--text-main);
+      padding: 14px;
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      line-height: 1.6;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .neu-textarea:focus {
+      border-color: rgba(56, 189, 248, 0.5);
+    }
+    .neu-text-field {
+      width: 100%;
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 12px;
+      color: var(--text-main);
+      padding: 10px 14px;
+      font-family: inherit;
+      font-size: 0.88rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .neu-text-field:focus {
+      border-color: rgba(56, 189, 248, 0.5);
+    }
+
+    /* Controls Grid: Provider & Voice */
+    .controls-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .neu-select {
+      width: 100%;
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 12px;
+      color: var(--text-main);
+      padding: 10px 14px;
+      font-family: inherit;
+      font-size: 0.85rem;
+      outline: none;
+      cursor: pointer;
+    }
+    .speed-slider-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .speed-slider {
+      flex: 1;
+      accent-color: var(--cyan);
+      cursor: pointer;
+    }
+    .speed-val {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--cyan);
+      min-width: 36px;
+    }
+
+    .speed-chips-row {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .speed-chip-btn {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-dim);
       cursor: pointer;
       transition: all 0.15s ease;
     }
-    .select-btn:hover {
-      background: var(--primary);
+    .speed-chip-btn:hover {
+      color: var(--text-main);
+    }
+    .speed-chip-btn.active {
+      color: var(--cyan);
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+
+    /* Primary Action Buttons */
+    .action-btn-group {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .btn-neu-primary {
+      flex: 1;
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      box-shadow: var(--shadow-raised);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 14px;
+      padding: 14px 22px;
+      font-family: var(--font-display);
+      font-size: 0.98rem;
+      font-weight: 700;
       color: #ffffff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: all 0.2s ease;
+      position: relative;
     }
-    .btn-speak {
-      background: var(--primary) !important;
-      color: #ffffff !important;
-      font-weight: 700 !important;
-      box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
+    .btn-neu-primary:hover {
+      box-shadow: var(--shadow-raised-sm), var(--shadow-glow-cyan);
+      border-color: var(--cyan);
+      color: var(--cyan);
+      transform: translateY(-2px);
     }
-    .btn-speak:hover {
-      background: var(--primary-hover) !important;
+    .btn-neu-primary:active {
+      box-shadow: var(--shadow-inset);
+      transform: translateY(0);
+    }
+    .btn-neu-secondary {
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised-sm);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 14px 18px;
+      font-family: var(--font-display);
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-neu-secondary:hover {
+      color: var(--text-main);
       transform: translateY(-1px);
     }
-    .passage {
-      background: #0a0e17;
-      border-left: 3px solid var(--primary);
-      padding: 16px 20px;
-      border-radius: 0 8px 8px 0;
-      color: #cbd5e1;
-      font-size: 14.5px;
-      line-height: 1.7;
-      user-select: text;
+    .btn-neu-secondary:active {
+      box-shadow: var(--shadow-inset);
+      transform: translateY(0);
     }
-    .custom-section {
-      margin-top: 32px;
+    .btn-neu-danger {
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised-sm);
+      border: 1px solid rgba(244, 63, 94, 0.3);
+      border-radius: 14px;
+      padding: 14px 18px;
+      color: var(--rose);
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
-    .custom-textarea {
+    .btn-neu-danger:hover {
+      background: rgba(244, 63, 94, 0.1);
+      transform: translateY(-1px);
+    }
+
+    /* Right Player: Waveform Visualizer & Sentence Buffer */
+    .player-visualizer-box {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset-deep);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100px;
+      position: relative;
+    }
+    canvas#audioWaveCanvas {
       width: 100%;
-      height: 100px;
-      background: #0a0e17;
-      border: 1px solid #334155;
-      border-radius: 8px;
-      color: #f8fafc;
-      padding: 12px;
-      font-family: inherit;
-      font-size: 14px;
-      resize: vertical;
+      height: 75px;
+      border-radius: 10px;
+      display: block;
+    }
+    .visualizer-status-bar {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+      font-size: 0.76rem;
+      color: var(--text-dim);
+    }
+    .state-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+    }
+    .state-indicator.speaking {
+      color: var(--emerald);
+    }
+    .state-indicator.buffering {
+      color: var(--amber);
+    }
+
+    /* Segmented Sentence Progress Scrubber */
+    .sentence-scrubber-track {
+      width: 100%;
+      height: 9px;
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border-radius: 9999px;
+      margin-bottom: 16px;
+      display: none;
+      gap: 3px;
+      padding: 2px;
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .scrubber-segment {
+      flex: 1;
+      height: 100%;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.08);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .scrubber-segment:hover {
+      background: rgba(56, 189, 248, 0.6);
+      transform: scaleY(1.3);
+    }
+    .scrubber-segment.played {
+      background: rgba(99, 102, 241, 0.65);
+    }
+    .scrubber-segment.active {
+      background: var(--cyan);
+      box-shadow: 0 0 8px var(--cyan);
+    }
+
+    /* Tactile Playback Transport Controls */
+    .player-transport {
+      background: var(--neu-base);
+      box-shadow: var(--shadow-inset);
+      border-radius: 18px;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .transport-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised-sm);
+      border: none;
       outline: none;
+      color: #cbd5e1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      transition: all 0.15s ease;
+    }
+    .transport-btn:hover {
+      color: var(--cyan);
+      transform: translateY(-2px);
+    }
+    .transport-btn:active {
+      box-shadow: var(--shadow-inset);
+      transform: translateY(0);
+    }
+    .transport-btn.btn-play-pause {
+      width: 52px;
+      height: 52px;
+      color: var(--cyan);
+      box-shadow: var(--shadow-raised), var(--shadow-glow-cyan);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+    }
+
+    /* Live Sentence Stream Track */
+    .sentence-track-label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .sentence-stream-container {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border-radius: 16px;
+      padding: 14px;
+      max-height: 220px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .sentence-block {
+      background: var(--neu-card);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      color: #94a3b8;
+      border-left: 3px solid transparent;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    .sentence-block:hover {
+      color: #f1f5f9;
+      background: var(--neu-elevated);
+    }
+    .sentence-block.active {
+      background: var(--neu-elevated);
+      color: #ffffff;
+      border-left: 3px solid var(--cyan);
+      box-shadow: var(--shadow-raised-sm);
+      font-weight: 500;
+    }
+    .sentence-block .sentence-num {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--cyan);
+      margin-right: 6px;
+      font-weight: 700;
+    }
+    .sentence-block .pause-badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--amber);
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-left: 6px;
+    }
+
+    /* Spatial Blueprint & Reasoning Tabs Card */
+    .mental-cinema-card {
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(56, 189, 248, 0.04) 100%);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      border-radius: 14px;
+      padding: 16px 18px;
+      margin-bottom: 18px;
+    }
+    .blueprint-tabs-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding-bottom: 8px;
+    }
+    .blueprint-tab-btn {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-dim);
+      font-family: var(--font-display);
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 5px 12px;
+      border-radius: 8px;
+      transition: all 0.15s ease;
+    }
+    .blueprint-tab-btn:hover {
+      color: var(--text-main);
+    }
+    .blueprint-tab-btn.active {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      color: var(--cyan);
+    }
+    .blueprint-tab-pane {
+      display: none;
+    }
+    .blueprint-tab-pane.active {
+      display: block;
+    }
+    .ascii-blueprint {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      line-height: 1.45;
+      color: #38bdf8;
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border-radius: 10px;
+      padding: 12px 14px;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    /* Spontaneous Docy Voice Follow-Up Bench */
+    .docy-followup-box {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border-radius: 14px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .docy-mic-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised-sm);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      color: var(--cyan);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: all 0.2s ease;
+    }
+    .docy-mic-btn.recording {
+      background: rgba(244, 63, 94, 0.2);
+      border-color: var(--rose);
+      color: var(--rose);
+      animation: pulse-dot 1s infinite;
+    }
+    .docy-followup-box input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-main);
+      font-size: 0.85rem;
+    }
+    .docy-send-btn {
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised-sm);
+      border: none;
+      border-radius: 10px;
+      padding: 6px 14px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--cyan);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .docy-send-btn:active {
+      box-shadow: var(--shadow-inset);
+    }
+
+    /* Data Hub & History Section ("Previous Used") */
+    .history-section {
       margin-top: 10px;
     }
-    .custom-textarea:focus {
-      border-color: var(--primary);
+    .history-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .history-title-group h2 {
+      font-family: var(--font-display);
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .history-title-group p {
+      font-size: 0.82rem;
+      color: var(--text-dim);
+    }
+
+    .history-filters-bar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .history-search-input {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border: 1px solid var(--border-subtle);
+      border-radius: 9999px;
+      padding: 8px 18px;
+      color: var(--text-main);
+      font-size: 0.85rem;
+      outline: none;
+      min-width: 240px;
+    }
+    .history-category-pills {
+      display: flex;
+      gap: 6px;
+    }
+    .cat-pill {
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised-sm);
+      border: none;
+      outline: none;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .cat-pill .pill-count {
+      font-size: 0.68rem;
+      background: var(--neu-inset);
+      padding: 1px 6px;
+      border-radius: 9999px;
+      color: var(--cyan);
+    }
+    .cat-pill:hover, .cat-pill.active {
+      color: var(--cyan);
+      box-shadow: var(--shadow-inset);
+    }
+
+    .history-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-export-neu {
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised-sm);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 7px 14px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .btn-export-neu:hover {
+      color: var(--cyan);
+      transform: translateY(-1px);
+    }
+    .btn-export-neu:active {
+      box-shadow: var(--shadow-inset);
+    }
+
+    /* History Grid Cards */
+    .history-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 20px;
+    }
+    .history-card {
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised);
+      border-radius: 18px;
+      padding: 20px;
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.2s ease;
+    }
+    .history-card:hover {
+      border-color: rgba(56, 189, 248, 0.3);
+      transform: translateY(-2px);
+    }
+    .card-meta-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .card-tag {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      color: var(--cyan);
+      cursor: pointer;
+    }
+    .card-provider-pill {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-dim);
+    }
+    .card-item-title {
+      font-family: var(--font-display);
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 8px;
+    }
+    .card-snippet-preview {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: #94a3b8;
+      max-height: 60px;
+      overflow: hidden;
+      margin-bottom: 12px;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .card-mental-preview {
+      font-size: 0.84rem;
+      color: #cbd5e1;
+      line-height: 1.5;
+      margin-bottom: 16px;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .card-footer-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-subtle);
+    }
+    .card-btn-play {
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      box-shadow: var(--shadow-raised-sm);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 10px;
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--cyan);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .card-btn-play:hover {
+      box-shadow: var(--shadow-raised-sm), var(--shadow-glow-cyan);
+    }
+    .card-btn-play:active {
+      box-shadow: var(--shadow-inset);
+    }
+    .card-actions-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-icon-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 0.95rem;
+      padding: 4px;
+      border-radius: 6px;
+      transition: color 0.15s;
+    }
+    .card-icon-btn:hover {
+      color: var(--text-main);
+    }
+    .card-icon-btn.btn-star.starred {
+      color: var(--amber);
+    }
+    .card-icon-btn.btn-delete:hover {
+      color: var(--rose);
+    }
+
+    /* VIEW 2: ADMIN SYSTEM CONSOLE */
+    .admin-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    .admin-tile {
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised);
+      border-radius: 18px;
+      padding: 22px;
+      border: 1px solid var(--border-subtle);
+    }
+    .tile-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .tile-header h3 {
+      font-family: var(--font-display);
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tile-main-val {
+      font-family: var(--font-display);
+      font-size: 1.55rem;
+      font-weight: 800;
+      color: #ffffff;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .tile-sub-val {
+      font-size: 0.78rem;
+      color: var(--text-dim);
+    }
+    .tile-recessed-box {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-top: 12px;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: #94a3b8;
+    }
+
+    /* Admin Allowlist Domains Viewer */
+    .allowlist-container {
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised);
+      border-radius: 20px;
+      padding: 24px;
+      border: 1px solid var(--border-subtle);
+      margin-bottom: 30px;
+    }
+    .allowlist-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .domain-search-box {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      color: var(--text-main);
+      outline: none;
+      min-width: 220px;
+    }
+    .allowlist-domains-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 10px;
+      max-height: 240px;
+      overflow-y: auto;
+      padding: 6px;
+    }
+    .domain-chip {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: #cbd5e1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+    .domain-chip:hover {
+      color: var(--cyan);
+    }
+    .domain-chip .lock-icon {
+      color: var(--emerald);
+      font-size: 0.7rem;
+    }
+
+    /* Admin Operations Panel */
+    .admin-ops-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 768px) {
+      .admin-ops-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .ops-action-card {
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised);
+      border-radius: 20px;
+      padding: 22px;
+      border: 1px solid var(--border-subtle);
+    }
+    .ops-action-card h3 {
+      font-family: var(--font-display);
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 6px;
+    }
+    .ops-action-card p {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    /* Toast Notification */
+    #toastNotification {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised), 0 0 16px rgba(56, 189, 248, 0.4);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: 14px;
+      padding: 12px 20px;
+      color: #ffffff;
+      font-size: 0.88rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 1000;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      pointer-events: none;
+    }
+    #toastNotification.show {
+      transform: translateY(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Modal Help Dialog */
+    .neu-modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(12, 16, 23, 0.8);
+      backdrop-filter: blur(8px);
+      z-index: 200;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .neu-modal-backdrop.show {
+      display: flex;
+    }
+    .neu-modal-content {
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised);
+      border: 1px solid var(--border-subtle);
+      border-radius: 24px;
+      max-width: 580px;
+      width: 100%;
+      padding: 28px;
+    }
+    .modal-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .modal-header-row h3 {
+      font-family: var(--font-display);
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+    .shortcut-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    .shortcut-table td {
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 0.88rem;
+    }
+    .shortcut-table kbd {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--cyan);
+      border: 1px solid var(--border-subtle);
+    }
+
+    footer.neu-footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 20px 28px;
+      text-align: center;
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      background: var(--neu-base);
+    }
+    footer.neu-footer a {
+      color: var(--cyan);
+      text-decoration: none;
+    }
+
+    /* Binaural Focus Soundscape Strip */
+    .focus-soundscape-strip {
+      margin-top: 14px;
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border-radius: 12px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .focus-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .focus-badge {
+      font-size: 0.68rem;
+      padding: 2px 7px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+    }
+    .focus-badge.active {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--emerald);
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+    }
+    .focus-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .focus-toggle-btn {
+      background: var(--neu-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 9999px;
+      padding: 5px 12px;
+      color: var(--text-muted);
+      font-size: 0.76rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: var(--shadow-raised-sm);
+      transition: all 0.2s;
+    }
+    .focus-toggle-btn.active {
+      background: var(--neu-elevated);
+      color: var(--cyan);
+      box-shadow: var(--shadow-glow-cyan);
+    }
+    .focus-select {
+      background: var(--neu-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 4px 8px;
+      color: var(--text-main);
+      font-size: 0.74rem;
+      outline: none;
+    }
+    .focus-vol-slider {
+      width: 70px;
+      accent-color: var(--cyan);
+    }
+    .focus-vol-label {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      min-width: 28px;
+    }
+
+    /* Plugins Hub Section */
+    .plugins-header-card {
+      margin-bottom: 24px;
+    }
+    .plugins-header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .plugins-title-group h2 {
+      font-family: var(--font-display);
+      font-size: 1.5rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .plugins-subtitle {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      max-width: 780px;
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+    .plugins-status-pills {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .plugins-pill {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      padding: 6px 12px;
+      border-radius: 9999px;
+      font-size: 0.78rem;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--cyan);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .pill-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-dim);
+    }
+    .pill-dot.active {
+      background: var(--emerald);
+      box-shadow: 0 0 6px var(--emerald);
+    }
+    .plugin-category-filters {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      padding: 6px;
+      border-radius: 9999px;
+    }
+    .plugin-chip {
+      background: transparent;
+      border: none;
+      outline: none;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .plugin-chip:hover {
+      color: var(--text-main);
+    }
+    .plugin-chip.active {
+      background: var(--neu-card);
+      color: var(--cyan);
+      box-shadow: var(--shadow-raised-sm);
+    }
+
+    /* Plugins Grid */
+    .plugins-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+      gap: 18px;
+      margin-bottom: 28px;
+    }
+    .plugin-card-neu {
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised-sm);
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 14px;
+      transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+      border: 1px solid transparent;
+      cursor: pointer;
+      min-width: 0;
+      box-sizing: border-box;
+    }
+    .plugin-card-neu:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-raised);
+    }
+    .plugin-card-neu.selected {
+      border-color: rgba(56, 189, 248, 0.4);
+      box-shadow: var(--shadow-glow-cyan);
+    }
+    .plugin-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .plugin-card-icon {
+      font-size: 1.8rem;
+      line-height: 1;
+    }
+    .plugin-card-cat {
+      font-size: 0.68rem;
+      font-family: var(--font-mono);
+      background: var(--neu-inset);
+      color: var(--indigo);
+      padding: 2px 8px;
+      border-radius: 9999px;
+      box-shadow: var(--shadow-inset);
+    }
+    .plugin-card-info h3 {
+      font-family: var(--font-display);
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 6px;
+    }
+    .plugin-card-info p {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+    .plugin-card-foot {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 10px;
+      border-top: 1px solid var(--border-subtle);
+    }
+    .plugin-status-tag {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--emerald);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .plugin-status-tag.disabled {
+      color: var(--text-dim);
+    }
+    .plugin-select-btn {
+      background: var(--neu-surface);
+      box-shadow: var(--shadow-raised-sm);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 5px 12px;
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: var(--cyan);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .plugin-select-btn:hover {
+      background: var(--neu-elevated);
+    }
+
+    /* Plugin Workbench Console */
+    .plugin-workbench-card {
+      margin-bottom: 32px;
+    }
+    .workbench-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      margin-bottom: 18px;
+    }
+    .workbench-title-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .workbench-icon {
+      font-size: 2rem;
+    }
+    .workbench-title-group h3 {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      font-weight: 700;
+    }
+    .workbench-cat {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+    }
+    .workbench-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .workbench-body {
+      margin-bottom: 20px;
+    }
+    .wb-field-group {
+      margin-bottom: 14px;
+    }
+    .wb-label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .wb-presets-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .wb-preset-btn {
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border: 1px solid var(--border-subtle);
+      border-radius: 9999px;
+      padding: 4px 12px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .wb-preset-btn:hover {
+      color: var(--cyan);
+    }
+    .wb-preset-btn.active {
+      background: var(--neu-card);
+      box-shadow: var(--shadow-raised-sm);
+      color: var(--cyan);
+    }
+    .wb-textarea {
+      width: 100%;
+      min-height: 120px;
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 12px 14px;
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-size: 0.84rem;
+      outline: none;
+      resize: vertical;
+      line-height: 1.45;
+    }
+    .wb-textarea:focus {
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+    .wb-input {
+      width: 100%;
+      background: var(--neu-inset);
+      box-shadow: var(--shadow-inset);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      outline: none;
+    }
+    .wb-input:focus {
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+
+    /* Results Box */
+    .workbench-results {
+      background: var(--neu-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: var(--shadow-raised-sm);
+      margin-top: 20px;
+    }
+    .results-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .results-header h4 {
+      font-family: var(--font-display);
+      font-size: 1.05rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .results-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .results-content-box {
+      font-size: 0.88rem;
+      line-height: 1.6;
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <div class="badge">🚀 DocVex Active Test Bench</div>
-      <h1>Select Text. Listen Out Loud.</h1>
-      <p class="subtitle">Test real-time streaming speech synthesis and technical explanations directly in Brave.</p>
-    </header>
 
-    <div class="instructions-card">
-      <div style="font-weight: 700; font-size: 16px;">Quick Test Workflow:</div>
-      <div class="step-list">
-        <div class="step-item">
-          <div class="step-num">1</div>
-          <div class="step-title">Load Extension</div>
-          <div class="step-desc">Load the <code style="color:#a5b4fc;">DOCVEX/extension</code> folder via <code style="color:#a5b4fc;">brave://extensions</code>.</div>
+  <!-- Top Navigation Shell -->
+  <header class="neu-nav">
+    <div class="brand-group" id="brandLogo">
+      <div class="brand-icon-neu">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <h1>DOCVEX <span style="font-size:0.65rem; padding: 2px 6px; border-radius: 6px; background: rgba(56,189,248,0.15); color: var(--cyan); font-weight:700;">LOCAL TUTOR</span></h1>
+        <div class="brand-tagline">Hear Your Documentation • Spatial Mental Models</div>
+      </div>
+    </div>
+
+    <!-- Neumorphic Role & Section Switcher -->
+    <div class="role-switcher-container">
+      <button class="role-btn active" id="tabStudioBtn" onclick="switchNavSection('studio')">
+        <span>🎧</span> Studio
+      </button>
+      <button class="role-btn" id="tabPluginsBtn" onclick="switchNavSection('plugins')">
+        <span>🔌</span> Plugins Hub <span class="nav-tab-badge" id="navPluginsCount">8</span>
+      </button>
+      <button class="role-btn" id="tabLibraryBtn" onclick="switchNavSection('library')">
+        <span>📚</span> Library <span class="nav-tab-badge" id="navLibCount">0</span>
+      </button>
+      <button class="role-btn admin" id="tabAdminBtn" onclick="switchNavSection('admin')">
+        <span>⚙️</span> Admin Console
+      </button>
+    </div>
+
+    <!-- Telemetry Status Badges -->
+    <div class="nav-telemetry">
+      <div class="tele-chip" id="ollamaHealthChip" title="Local Ollama Status">
+        <div class="tele-dot" id="ollamaHealthDot"></div>
+        <span>Ollama: <b id="ollamaHealthText">Checking…</b></span>
+      </div>
+      <div class="tele-chip" id="groqHealthChip" title="Groq Cloud Status">
+        <div class="tele-dot" id="groqHealthDot"></div>
+        <span>Groq: <b id="groqHealthText">Checking…</b></span>
+      </div>
+      <div class="tele-chip" id="ttfsChip" style="display:none;" title="Time To First Sentence Latency">
+        <span>⚡ TTFS: <b id="ttfsVal" style="color:var(--cyan);">--ms</b></span>
+      </div>
+      <button class="icon-action-btn" id="btnHelpModal" title="Keyboard Shortcuts" onclick="toggleHelpModal(true)">
+        ?
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Viewport -->
+  <main class="app-viewport">
+
+    <!-- Hero Philosophy & Live Metrics Banner -->
+    <div class="hero-manifesto">
+      <div class="manifesto-quote">
+        <blockquote>
+          "Reading code gives you syntax; hearing it constructed in physical space gives you intuition. DocVex translates dense technical documentation into <span class="highlight">spatial mental cinema</span> — spoken aloud at zero latency on your own hardware."
+        </blockquote>
+        <div class="manifesto-sub">
+          <span>Architected with zero NPM runtime dependencies</span>
+          <span>•</span>
+          <code>100% Offline Capable</code>
+          <span>•</span>
+          <code>Sub-600ms Time-To-First-Sentence</code>
         </div>
-        <div class="step-item">
-          <div class="step-num">2</div>
-          <div class="step-title">Select Any Passage</div>
-          <div class="step-desc">Highlight any text below, or click the "Highlight Passage" button.</div>
+      </div>
+      <div class="hero-stats-row">
+        <div class="hero-stat-pill">
+          <span class="num" id="statTopicsTaught">0</span>
+          <span class="label">Topics Taught</span>
         </div>
-        <div class="step-item">
-          <div class="step-num">3</div>
-          <div class="step-title">Press Shortcut</div>
-          <div class="step-desc">Press <kbd>Control + Shift + S</kbd> or right click &gt; "🎓 Teach me this".</div>
+        <div class="hero-stat-pill">
+          <span class="num" id="statAudioSeconds">0m</span>
+          <span class="label">Audio Listened</span>
+        </div>
+        <div class="hero-stat-pill">
+          <span class="num" id="statOfflineRatio">100%</span>
+          <span class="label">Offline Safety</span>
         </div>
       </div>
     </div>
 
-    <!-- Passage 1 -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">1. Transformer Architecture — Scaled Dot-Product Attention</div>
-        <div style="display:flex; gap:8px;">
-          <button class="select-btn btn-speak" onclick="speakElement('p1')">🎓 Teach Me This</button>
-          <button class="select-btn" onclick="highlightElement('p1')">Highlight Only</button>
+    <!-- VIEW 1: LEARNER WORKSPACE -->
+    <div class="view-panel active" id="viewLearner">
+      <div class="studio-grid" id="studioGridSection">
+        
+        <!-- Left: Input & Acoustic Studio Bench -->
+        <div class="neu-card">
+          <div class="card-title-row">
+            <h2><span>🎙️</span> Acoustic Learning Studio</h2>
+            <span class="card-badge">Zero-Lag Ingestion</span>
+          </div>
+
+          <!-- Quick Test Presets -->
+          <div class="presets-label">Quick Test Presets (Select to load):</div>
+          <div class="preset-chips-scroll">
+            <button class="preset-chip" onclick="loadPreset('attention')">⚡ Scaled Dot-Product Attention</button>
+            <button class="preset-chip" onclick="loadPreset('eventloop')">🔄 Node.js Microtask Starvation</button>
+            <button class="preset-chip" onclick="loadPreset('raft')">🏛️ Raft Consensus Leader Election</button>
+            <button class="preset-chip" onclick="loadPreset('rust')">🦀 Rust Ownership & Borrow Checker</button>
+            <button class="preset-chip" onclick="loadPreset('zerocopy')">💾 Zero-Copy Linux Kernel I/O</button>
+          </div>
+
+          <!-- Technical Passage Textarea -->
+          <div class="neu-input-wrap">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+              <label for="inputTechnicalText" style="margin-bottom:0;">Highlighted Code, Algorithm, or Documentation Snippet:</label>
+              <button class="neu-chip-action-btn" id="btnDictateSnippet" onclick="toggleInputDictation()" type="button" title="Speak or dictate technical thoughts">
+                <span>🎙️</span> Dictate Note
+              </button>
+            </div>
+            <textarea id="inputTechnicalText" class="neu-textarea" placeholder="Paste any complex technical paragraph or code snippet here, or click 'Dictate Note' to speak your technical question..."></textarea>
+          </div>
+
+          <!-- Optional Context Fields -->
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:16px;">
+            <div>
+              <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:4px;">Topic Title (Optional):</label>
+              <input type="text" id="inputTopicTitle" class="neu-text-field" placeholder="e.g. Distributed Consensus">
+            </div>
+            <div>
+              <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:4px;">Domain Category:</label>
+              <select id="inputCategory" class="neu-select">
+                <option value="Algorithms">Algorithms & DS</option>
+                <option value="Distributed Systems">Distributed Systems</option>
+                <option value="Runtimes">Language Runtimes & OS</option>
+                <option value="Cloud/DevOps">Cloud & Containers</option>
+                <option value="Frontend">Frontend & Web API</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Controls: Provider & Speech Rate -->
+          <div class="controls-row">
+            <div>
+              <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:4px;">Inference Provider:</label>
+              <select id="selectProvider" class="neu-select">
+                <option value="hybrid">Hybrid (Fast Voice + Deep Gotchas)</option>
+                <option value="ollama">Ollama (100% Offline Local)</option>
+                <option value="groq">Groq Cloud (Sub-600ms Stream)</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:4px;">Speech Narration Rate:</label>
+              <div class="speed-slider-wrap">
+                <input type="range" id="sliderSpeed" class="speed-slider" min="0.75" max="1.75" step="0.05" value="1.0" oninput="updateSpeedDisplay(this.value)">
+                <span class="speed-val" id="labelSpeedVal">1.0x</span>
+              </div>
+              <div class="speed-chips-row">
+                <button class="speed-chip-btn" onclick="setSpeed(0.85)">0.85x Warm</button>
+                <button class="speed-chip-btn active" id="chipSpeed1" onclick="setSpeed(1.0)">1.0x Normal</button>
+                <button class="speed-chip-btn" onclick="setSpeed(1.25)">1.25x Dynamic</button>
+                <button class="speed-chip-btn" onclick="setSpeed(1.5)">1.5x Brisk</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Primary Actions -->
+          <div class="action-btn-group">
+            <button class="btn-neu-primary" id="btnExplain" onclick="triggerTeachSession()">
+              <span>⚡</span> Explain & Listen Out Loud
+            </button>
+            <button class="btn-neu-danger" id="btnStopAudio" onclick="stopActiveSpeech()" title="Stop Speaking">
+              ⏹️ Stop
+            </button>
+          </div>
+        </div>
+
+        <!-- Right: Audio Player & Live SentenceBuffer Visualizer -->
+        <div class="neu-card">
+          <div class="card-title-row">
+            <h2><span>🔊</span> Spatial Acoustic Stage</h2>
+            <span class="card-badge" id="playerStatusBadge">Ready</span>
+          </div>
+
+          <!-- Real-Time Waveform & Spectrum Visualizer -->
+          <div class="player-visualizer-box">
+            <canvas id="audioWaveCanvas"></canvas>
+            <div class="visualizer-status-bar">
+              <div class="state-indicator" id="playbackStateIndicator">
+                <span class="tele-dot" style="animation:none;" id="playbackStateDot"></span>
+                <span id="playbackStateText">Idle</span>
+              </div>
+              <span id="voiceEngineLabel" style="font-family:var(--font-mono);">Engine: Web Speech API</span>
+            </div>
+          </div>
+
+          <!-- Segmented Sentence Progress Scrubber -->
+          <div class="sentence-scrubber-track" id="sentenceScrubberTrack" title="Sentence progression scrubber — click any segment to seek directly"></div>
+
+          <!-- Tactile Playback Transport -->
+          <div class="player-transport">
+            <button class="transport-btn" onclick="prevSentence()" title="Previous Sentence (←)">⏮️</button>
+            <button class="transport-btn btn-play-pause" id="btnPlayPause" onclick="togglePlayPause()" title="Play / Pause (Space)">▶️</button>
+            <button class="transport-btn" onclick="nextSentence()" title="Next Sentence (→)">⏭️</button>
+            <button class="transport-btn" onclick="replayCurrentSentence()" title="Replay Current Sentence (R)">🔁</button>
+          </div>
+
+          <!-- Binaural 40Hz Focus Soundscape Strip -->
+          <div class="focus-soundscape-strip">
+            <div class="focus-title">
+              <span>🧠 40Hz Focus Ambience</span>
+              <span class="focus-badge" id="focusStatusBadge">Off</span>
+            </div>
+            <div class="focus-controls">
+              <button class="focus-toggle-btn" id="btnFocusToggle" onclick="FocusSoundscape.toggle()">
+                Activate 40Hz
+              </button>
+              <select class="focus-select" id="focusModeSelect" onchange="FocusSoundscape.setMode(this.value)">
+                <option value="gamma">Gamma (40Hz Beats)</option>
+                <option value="brown">Brown Noise</option>
+                <option value="alpha">Alpha (10Hz Flow)</option>
+              </select>
+              <input type="range" class="focus-vol-slider" id="focusVolSlider" min="0" max="100" value="30" oninput="FocusSoundscape.setVolume(this.value)" title="Ambience Volume">
+              <span class="focus-vol-label" id="focusVolLabel">30%</span>
+            </div>
+          </div>
+
+          <!-- Spatial Mental Model & Blueprint Card -->
+          <div class="mental-cinema-card" id="mentalCinemaBox">
+            <div class="blueprint-tabs-bar">
+              <button class="blueprint-tab-btn active" id="btnTabAnalogy" onclick="switchBlueprintTab('analogy')">🎬 Spatial Analogy</button>
+              <button class="blueprint-tab-btn" id="btnTabDiagram" onclick="switchBlueprintTab('diagram')">🗺️ Mechanical Blueprint</button>
+              <button class="blueprint-tab-btn" id="btnTabGotchas" onclick="switchBlueprintTab('gotchas')">⚠️ Critical Gotchas</button>
+            </div>
+            <div class="blueprint-tab-pane active" id="paneAnalogy">
+              <p id="mentalCinemaText">Spatial analogies will appear here as your explanation begins streaming…</p>
+            </div>
+            <div class="blueprint-tab-pane" id="paneDiagram">
+              <pre class="ascii-blueprint" id="blueprintDiagramText">Diagram will appear here as your mental model develops…</pre>
+            </div>
+            <div class="blueprint-tab-pane" id="paneGotchas">
+              <div id="blueprintGotchasText" style="font-size:0.86rem; color:#cbd5e1; line-height:1.5;">Ollama deep-dive gotchas and architectural trade-offs will stream here concurrently…</div>
+            </div>
+          </div>
+
+          <!-- Real-Time SentenceBuffer Stream -->
+          <div class="sentence-track-label">
+            <span>Streaming Sentence Buffer:</span>
+            <span id="sentenceCountBadge" style="font-family:var(--font-mono); font-size:0.75rem; color:var(--cyan);">0 sentences</span>
+          </div>
+          <div class="sentence-stream-container" id="sentenceStreamContainer">
+            <div style="font-size:0.8rem; color:var(--text-dim); text-align:center; padding:18px;">
+              Sentence segmentation blocks and acoustic pauses will stream here in real time.
+            </div>
+          </div>
+
+          <!-- Spontaneous Docy Voice Follow-Up Bench -->
+          <div class="docy-followup-box">
+            <button class="docy-mic-btn" id="btnDocyMic" onclick="toggleDocyMic()" title="Click to speak your doubt aloud">🎙️</button>
+            <input type="text" id="docyFollowupInput" placeholder="Ask Docy a spontaneous follow-up doubt or click mic..." onkeydown="if(event.key==='Enter') triggerFollowUpQuestion()">
+            <button class="docy-send-btn" onclick="triggerFollowUpQuestion()">Ask Docy</button>
+          </div>
+        </div>
+
+      </div>
+      
+      <!-- Section Anchor & Transition Bar -->
+      <div class="section-anchor-bar" id="librarySectionAnchor">
+        <div class="section-anchor-title">
+          <span>🗄️</span> Previous Used Acoustic Library Vault
+        </div>
+        <button class="section-anchor-btn" onclick="window.scrollTo({top: 0, left: 0, behavior: 'smooth'})" title="Scroll back up to Acoustic Studio">
+          <span>↑</span> Back to Acoustic Studio
+        </button>
+      </div>
+
+      <!-- History & Data Hub ("Previous Used") -->
+      <div class="history-section" id="historySectionVault">
+        <div class="history-header-row">
+          <div class="history-title-group">
+            <h2><span>🗄️</span> Previous Used Acoustic Library</h2>
+            <p id="historyCountSummary">Access, search, replay, and export your previous learning sessions.</p>
+          </div>
+          <div class="history-filters-bar">
+            <input type="text" id="historySearchInput" class="history-search-input" placeholder="Search past topics, code, or analogies…" oninput="filterHistoryCards()">
+            <div class="history-category-pills">
+              <button class="cat-pill active" id="pillCatAll" onclick="setCategoryFilter('all', this)">All <span class="pill-count" id="countCatAll">0</span></button>
+              <button class="cat-pill" id="pillCatAlgo" onclick="setCategoryFilter('Algorithms', this)">Algorithms <span class="pill-count" id="countCatAlgo">0</span></button>
+              <button class="cat-pill" id="pillCatDist" onclick="setCategoryFilter('Distributed Systems', this)">Distributed <span class="pill-count" id="countCatDist">0</span></button>
+              <button class="cat-pill" id="pillCatRun" onclick="setCategoryFilter('Runtimes', this)">Runtimes <span class="pill-count" id="countCatRun">0</span></button>
+              <button class="cat-pill" id="pillCatStar" onclick="setCategoryFilter('starred', this)">⭐ Starred <span class="pill-count" id="countCatStar">0</span></button>
+            </div>
+          </div>
+          <div class="history-actions">
+            <button class="btn-export-neu" onclick="exportHistory('markdown')">📥 Markdown</button>
+            <button class="btn-export-neu" onclick="exportHistory('json')">💾 JSON</button>
+            <button class="btn-export-neu" onclick="exportHistory('anki')">🎴 Anki Deck</button>
+            <button class="btn-export-neu" style="color:var(--rose);" onclick="clearAllHistory()">🗑️ Clear</button>
+          </div>
+        </div>
+
+        <!-- History Cards Grid -->
+        <div class="history-cards-grid" id="historyCardsGrid">
+          <!-- Cards injected safely by JS DOM construction -->
         </div>
       </div>
-      <p id="p1" class="passage">
-        An attention function can be described as mapping a query and a set of key-value pairs to an output, where the query, keys, values, and output are all vectors. The output is computed as a weighted sum of the values, where the weight assigned to each value is computed by a compatibility function of the query with the corresponding key. We compute the matrix of outputs as Softmax of (Q multiplied by K transpose divided by the square root of d_k) multiplied by V.
-      </p>
     </div>
 
-    <!-- Passage 2 -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">2. Node.js Architecture — The Event Loop & Microtasks</div>
-        <div style="display:flex; gap:8px;">
-          <button class="select-btn btn-speak" onclick="speakElement('p2')">🎓 Teach Me This</button>
-          <button class="select-btn" onclick="highlightElement('p2')">Highlight Only</button>
+    <!-- VIEW 2: PLUGINS & EXTENSIONS HUB -->
+    <div class="view-panel" id="viewPlugins">
+      <!-- Plugins Header & Filter Bar -->
+      <div class="plugins-header-card neu-card">
+        <div class="plugins-header-content">
+          <div class="plugins-title-group">
+            <h2><span>🔌</span> Developer Plugins & Extensions</h2>
+            <p class="plugins-subtitle">
+              Native zero-dependency developer plugins. Run real code audits on git diffs, construct LeetCode spatial cinema diagrams, deconstruct distributed systems failure domains, audit regex ReDoS vulnerabilities, and export directly to Obsidian and Anki.
+            </p>
+          </div>
+          <div class="plugins-status-pills">
+            <div class="plugins-pill">
+              <span class="pill-dot active" id="wbActivePillDot"></span>
+              <span id="pluginsActiveCount">8 / 8 Active</span>
+            </div>
+            <div class="plugins-pill">
+              <span>🛡️ 100% Zero-NPM Runtime</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Category Filters -->
+        <div class="plugin-category-filters" id="pluginCategoryFilters">
+          <button class="plugin-chip active" id="chipPluginAll" onclick="filterPluginsByCategory('all')">All Plugins (8)</button>
+          <button class="plugin-chip" id="chipPluginAlgo" onclick="filterPluginsByCategory('Algorithms')">Algorithms (1)</button>
+          <button class="plugin-chip" id="chipPluginSys" onclick="filterPluginsByCategory('Databases & Systems')">Systems & DB (2)</button>
+          <button class="plugin-chip" id="chipPluginVcs" onclick="filterPluginsByCategory('VCS & Review')">VCS & Review (1)</button>
+          <button class="plugin-chip" id="chipPluginRecall" onclick="filterPluginsByCategory('Active Recall')">Active Recall (1)</button>
+          <button class="plugin-chip" id="chipPluginTools" onclick="filterPluginsByCategory('Dev Tools')">Dev Tools (1)</button>
+          <button class="plugin-chip" id="chipPluginKb" onclick="filterPluginsByCategory('Knowledge Base')">Knowledge Base (1)</button>
+          <button class="plugin-chip" id="chipPluginAudio" onclick="filterPluginsByCategory('Audio Production')">Audio (1)</button>
         </div>
       </div>
-      <p id="p2" class="passage">
-        The Node.js event loop operates across distinct phases: timers, pending callbacks, idle/prepare, poll, check, and close callbacks. Crucially, the microtask queue—which processes Promise resolutions and process.nextTick callbacks—runs to exhaustion immediately after the currently running operation completes, regardless of the current event loop phase, which can cause event loop starvation if recursive microtasks are scheduled.
-      </p>
+
+      <!-- Plugins Grid (8 Cards) -->
+      <div class="plugins-grid" id="pluginsCardsGrid">
+        <!-- Rendered safely via DOM construction -->
+      </div>
+
+      <!-- Interactive Plugin Workbench Console -->
+      <div class="plugin-workbench-card neu-card" id="pluginWorkbenchCard">
+        <div class="workbench-header">
+          <div class="workbench-title-group">
+            <span class="workbench-icon" id="wbPluginIcon">🌿</span>
+            <div>
+              <h3 id="wbPluginName">Git Diff Acoustic Auditor</h3>
+              <span class="workbench-cat" id="wbPluginCategory">VCS & Review • Version 1.0.0</span>
+            </div>
+          </div>
+          <div class="workbench-actions">
+            <button class="btn-neu-sm" id="wbToggleEnableBtn" onclick="toggleActivePluginEnable()">
+              Active
+            </button>
+            <button class="btn-neu-accent" id="wbExecuteBtn" onclick="runActivePluginWorkbench()">
+              ⚡ Run Plugin
+            </button>
+          </div>
+        </div>
+
+        <!-- Dynamic Workbench Body per Plugin Type -->
+        <div class="workbench-body" id="workbenchDynamicBody">
+          <!-- Populated safely via DOM construction based on active plugin -->
+        </div>
+
+        <!-- Workbench Execution Results Inspector -->
+        <div class="workbench-results" id="workbenchResultsBox" style="display:none;">
+          <div class="results-header">
+            <h4><span>📋</span> Execution Diagnostic Output</h4>
+            <div class="results-actions" id="workbenchResultActions">
+              <!-- Action buttons populated safely -->
+            </div>
+          </div>
+          <div class="results-content-box" id="workbenchResultsContent">
+            <!-- Formatted results populated safely -->
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- Passage 3 -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">3. Distributed Systems — RAFT Leader Election</div>
-        <div style="display:flex; gap:8px;">
-          <button class="select-btn btn-speak" onclick="speakElement('p3')">🎓 Teach Me This</button>
-          <button class="select-btn" onclick="highlightElement('p3')">Highlight Only</button>
+    <!-- VIEW 3: ADMIN SYSTEM CONSOLE -->
+    <div class="view-panel" id="viewAdmin">
+      
+      <!-- System Telemetry & Hardware Topology Tiles -->
+      <div class="admin-grid">
+        <!-- Ollama Daemon Tile -->
+        <div class="admin-tile">
+          <div class="tile-header">
+            <h3><span>🤖</span> Ollama Engine</h3>
+            <span class="tele-dot" id="adminOllamaDot"></span>
+          </div>
+          <div class="tile-main-val">
+            <span id="adminOllamaStatus">Checking…</span>
+          </div>
+          <div class="tile-sub-val" id="adminOllamaModel">Model: qwen3:4b</div>
+          <div class="tile-recessed-box" id="adminOllamaHost">
+            Host: http://127.0.0.1:11434
+          </div>
+        </div>
+
+        <!-- Groq Cloud Tile -->
+        <div class="admin-tile">
+          <div class="tile-header">
+            <h3><span>⚡</span> Groq Cloud Stream</h3>
+            <span class="tele-dot" id="adminGroqDot"></span>
+          </div>
+          <div class="tile-main-val">
+            <span id="adminGroqStatus">Checking…</span>
+          </div>
+          <div class="tile-sub-val" id="adminGroqModel">Model: openai/gpt-oss-20b</div>
+          <div class="tile-recessed-box">
+            Retry: Exponential backoff on 429/503
+          </div>
+        </div>
+
+        <!-- Chatterbox Worker Tile -->
+        <div class="admin-tile">
+          <div class="tile-header">
+            <h3><span>🧠</span> Chatterbox WAV</h3>
+            <span class="tele-dot warning" id="adminChatterboxDot"></span>
+          </div>
+          <div class="tile-main-val">
+            <span id="adminChatterboxStatus">Opt-in</span>
+          </div>
+          <div class="tile-sub-val" id="adminChatterboxDevice">Device: Auto (Apple MPS / CUDA)</div>
+          <div class="tile-recessed-box" id="adminChatterboxCacheDir">
+            Cache: .docvex-audio/*.wav
+          </div>
+        </div>
+
+        <!-- Runtime Envelope Tile -->
+        <div class="admin-tile">
+          <div class="tile-header">
+            <h3><span>🛡️</span> Zero-NPM Runtime</h3>
+            <span class="tele-dot"></span>
+          </div>
+          <div class="tile-main-val">
+            <span id="adminMemoryMb">-- MB</span>
+          </div>
+          <div class="tile-sub-val" id="adminUptime">Uptime: --s</div>
+          <div class="tile-recessed-box" id="adminNodeVersion">
+            Node.js: Built-in standard library
+          </div>
         </div>
       </div>
-      <p id="p3" class="passage">
-        Raft achieves consensus through a strong leader paradigm. Servers begin as followers; if election timeouts expire without receiving heartbeats from a leader, a follower transitions to a candidate, increments its current term, and broadcasts RequestVote RPCs. A candidate wins the election when it receives votes from a strict majority of servers in the cluster for that term, ensuring at most one leader can be elected per term.
-      </p>
+
+      <!-- Authoritative Grounding Allowlist Inspection -->
+      <div class="allowlist-container">
+        <div class="allowlist-header">
+          <div>
+            <h3 style="font-family:var(--font-display); font-size:1.15rem; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:8px;">
+              <span>🌐</span> Grounding Domain Allowlist (Anti-Hallucination)
+            </h3>
+            <p style="font-size:0.8rem; color:var(--text-dim);">Strict domain boundary: only documentation from verified engineering specifications is cited.</p>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <input type="text" id="domainSearchInput" class="domain-search-box" placeholder="Filter domains (e.g. rust, k8s, mdn)..." oninput="filterAllowlistDomains()">
+            <span class="card-badge" id="domainCountBadge">24 Domains</span>
+          </div>
+        </div>
+        <div class="allowlist-domains-grid" id="allowlistDomainsGrid">
+          <!-- Injected dynamically via /api/retrieval/domains -->
+        </div>
+      </div>
+
+      <!-- Admin Operations & Maintenance Panel -->
+      <div class="admin-ops-grid">
+        <!-- Cache Maintenance -->
+        <div class="ops-action-card">
+          <h3><span>🧹</span> Audio Cache Purge</h3>
+          <p>Remove temporary Chatterbox neural WAV audio files stored in the local server cache directory.</p>
+          <div style="display:flex; gap:12px;">
+            <button class="btn-neu-danger" onclick="triggerCachePurge()">Purge Audio Cache</button>
+            <button class="btn-neu-secondary" onclick="fetchSystemStats()">Refresh Telemetry</button>
+          </div>
+        </div>
+
+        <!-- Data Backup & Reset -->
+        <div class="ops-action-card">
+          <h3><span>💾</span> Local Library Backup & Migration</h3>
+          <p>Export complete acoustic library history and settings as a standalone JSON backup file.</p>
+          <div style="display:flex; gap:12px;">
+            <button class="btn-neu-secondary" onclick="exportHistory('json')">Download Full Backup</button>
+            <button class="btn-neu-secondary" onclick="document.getElementById('importFile').click()">Restore Backup</button>
+            <input type="file" id="importFile" style="display:none;" accept=".json" onchange="importHistoryFile(event)">
+          </div>
+        </div>
+      </div>
+
     </div>
 
-    <!-- Custom Text Area -->
-    <div class="card custom-section">
-      <div class="card-header">
-        <div class="card-title">Custom Technical Snippet</div>
-        <div style="display:flex; gap:8px;">
-          <button class="select-btn btn-speak" onclick="speakElement('custom-input')">🎓 Teach Me This</button>
-          <button class="select-btn" onclick="highlightElement('custom-input')">Highlight Only</button>
-        </div>
+  </main>
+
+  <!-- Help & Shortcuts Modal -->
+  <div class="neu-modal-backdrop" id="helpModal" onclick="if(event.target===this) toggleHelpModal(false)">
+    <div class="neu-modal-content">
+      <div class="modal-header-row">
+        <h3>⌨️ Keyboard Shortcuts & Navigation</h3>
+        <button class="icon-action-btn" onclick="toggleHelpModal(false)">✕</button>
       </div>
-      <textarea id="custom-input" class="custom-textarea" placeholder="Paste any difficult technical paragraph here to test selection...">Zero-copy deserialization enables high-throughput data processing by referencing byte buffers directly in memory rather than allocating separate heap structures and parsing fields into native language representations.</textarea>
+      <table class="shortcut-table">
+        <tr>
+          <td><kbd>Space</kbd></td>
+          <td>Play or Pause current explanation</td>
+        </tr>
+        <tr>
+          <td><kbd>→</kbd> (Right Arrow)</td>
+          <td>Skip to next sentence</td>
+        </tr>
+        <tr>
+          <td><kbd>←</kbd> (Left Arrow)</td>
+          <td>Return to previous sentence</td>
+        </tr>
+        <tr>
+          <td><kbd>R</kbd></td>
+          <td>Replay active sentence from beginning</td>
+        </tr>
+        <tr>
+          <td><kbd>Ctrl + Enter</kbd></td>
+          <td>Trigger "Explain & Listen Out Loud"</td>
+        </tr>
+        <tr>
+          <td><kbd>Escape</kbd></td>
+          <td>Stop audio immediately or close modals</td>
+        </tr>
+      </table>
+      <div style="text-align:right;">
+        <button class="btn-neu-primary" style="padding:8px 20px;" onclick="toggleHelpModal(false)">Got It</button>
+      </div>
     </div>
   </div>
 
+  <!-- Toast Notification Pill -->
+  <div id="toastNotification">
+    <span id="toastIcon">✨</span>
+    <span id="toastMsg">Action complete</span>
+  </div>
+
+  <!-- Footer -->
+  <footer class="neu-footer">
+    <div>
+      <b>DocVex</b> — Offline-First Acoustic Technical Tutor • Licensed under MIT
+    </div>
+    <div>
+      Zero External NPM Dependencies • <a href="https://github.com/harshakumar25/DOCVEX" target="_blank" rel="noopener">GitHub Repository</a>
+    </div>
+  </footer>
+
+  <!-- Application Logic -->
   <script>
-    function highlightElement(id) {
-      const el = document.getElementById(id);
-      if (!el) return;
+    // Presets Library with Spatial Mechanical Blueprints
+    const PRESETS = {
+      attention: {
+        title: "Transformer Scaled Dot-Product Attention",
+        category: "Algorithms",
+        text: "An attention function can be described as mapping a query and a set of key-value pairs to an output, where the query, keys, values, and output are all vectors. The output is computed as a weighted sum of the values, where the weight assigned to each value is computed by a compatibility function of the query with the corresponding key. We compute the matrix of outputs as Softmax of (Q multiplied by K transpose divided by the square root of d_k) multiplied by V.",
+        diagram: "Query Vector Q ────┐\n                   ├─── [ Dot-Product (Q·Kᵀ) ] ───> Softmax(· / √d_k) ───┐\nKey Vector K   ────┘                                                      ├───> Weighted Sum Output\nValue Vector V ──────────────────────────────────────────────────────────┘",
+        gotchas: "1. Quadratic memory explosion: O(N²) memory consumption as sequence length increases.\n2. √d_k scaling is required to prevent softmax gradients from vanishing into flat saturated regions."
+      },
+      eventloop: {
+        title: "Node.js Event Loop & Microtask Starvation",
+        category: "Runtimes",
+        text: "The Node.js event loop operates across distinct phases: timers, pending callbacks, idle/prepare, poll, check, and close callbacks. Crucially, the microtask queue—which processes Promise resolutions and process.nextTick callbacks—runs to exhaustion immediately after the currently running operation completes, regardless of the current event loop phase, which can cause event loop starvation if recursive microtasks are scheduled.",
+        diagram: "┌────────────────────────────────────────────────────────┐\n│                      EVENT LOOP                        │\n│ [Timers] ──> [Pending] ──> [Poll] ──> [Check] ──> [Close]\n└───────────────────────────┬────────────────────────────┘\n                            │ (Runs between every phase)\n                            ▼\n             ┌──────────────────────────────┐\n             │   MICROTASKS RUN-TO-EMPTY    │\n             │   • Promise resolutions      │\n             │   • process.nextTick         │\n             │   ⚠️ Starves I/O if looped   │\n             └──────────────────────────────┘",
+        gotchas: "1. Event loop starvation: A recursive Promise.resolve().then() loop halts disk and network I/O completely.\n2. process.nextTick executes before other microtasks, creating deeper priority traps."
+      },
+      raft: {
+        title: "Raft Consensus Leader Election",
+        category: "Distributed Systems",
+        text: "Raft achieves consensus through a strong leader paradigm. Servers begin as followers; if election timeouts expire without receiving heartbeats from a leader, a follower transitions to a candidate, increments its current term, and broadcasts RequestVote RPCs. A candidate wins the election when it receives votes from a strict majority of servers in the cluster for that term, ensuring at most one leader can be elected per term.",
+        diagram: "┌──────────┐    Election Timeout (Heartbeat missed)    ┌───────────┐\n│ Follower │ ─────────────────────────────────────────> │ Candidate │\n└──────────┘                                            └─────┬─────┘\n     ▲                                                        │\n     │ Majority Vote Gained (Term N)                          │\n     └─────────────────────── [ Leader ] <────────────────────┘",
+        gotchas: "1. Split brain prevention: Only a strict majority (> N/2) can elect a leader in any given term.\n2. Uncommitted entries: Leaders cannot commit log entries from previous terms by counting replicas alone."
+      },
+      rust: {
+        title: "Rust Ownership & Borrow Checker Invariants",
+        category: "Runtimes",
+        text: "Rust enforces memory safety without garbage collection through its ownership system. Each value has a single owner. When the owner goes out of scope, the value is automatically dropped. References allow borrowing without taking ownership, governed by the core rule: you may have any number of immutable references (&T), or exactly one mutable reference (&mut T), but never both simultaneously.",
+        diagram: "Value on Heap: String(\"DocVex\")\n       ▲\n       │ Single Owner (variable `x`)\n       │\n  ┌────┴──────────────────────────┐\n  │  &x     (Immutable borrow 1)  │ ✓ Valid\n  │  &x     (Immutable borrow 2)  │ ✓ Valid\n  │  &mut x (Exclusive borrow)    │ ✗ Forbidden while immutables active!\n  └───────────────────────────────┘",
+        gotchas: "1. Aliasing XOR Mutability: You can never have a mutable reference while immutable references are still in scope.\n2. Re-borrowing across await: Holding a non-Send reference across an async await boundary causes compilation failure."
+      },
+      zerocopy: {
+        title: "Zero-Copy Linux Kernel I/O",
+        category: "Cloud/DevOps",
+        text: "Zero-copy I/O bypasses the overhead of copying data between kernel buffers and user-space memory buffers. Using system calls like sendfile or splice, data transfers directly from page cache disk buffers to network socket buffers via DMA (Direct Memory Access), eliminating costly CPU context switches and memory bus saturation.",
+        diagram: "Traditional Copy (4 Context Switches, 2 CPU Copies):\n[Disk] ──> [Page Cache] ──(CPU Copy)──> [User Heap] ──(CPU Copy)──> [Socket Buffer] ──> [NIC]\n\nZero-Copy Linux (sendfile / splice, DMA Direct):\n[Disk] ──> [Page Cache] ────────────(DMA Direct Stream)───────────> [Socket Buffer] ──> [NIC]",
+        gotchas: "1. Memory map file truncation: If a file is truncated while mmap'd, a SIGBUS signal crashes the process.\n2. Header prepend overhead: TLS encryption often requires user-space buffers unless using kernel kTLS."
+      }
+    };
+
+    // State Management
+    const AppState = {
+      activeTab: 'learner',
+      activeBlueprintTab: 'analogy',
+      isStreaming: false,
+      waitingForNextSentence: false,
+      requestStartTime: null,
+      history: [],
+      rawDomains: [],
+      currentSession: {
+        sentences: [],
+        currentIndex: 0,
+        isPlaying: false,
+        isPaused: false,
+        fullExplanation: '',
+        mentalModel: '',
+        diagram: '',
+        gotchas: '',
+        provider: 'hybrid',
+        topic: ''
+      },
+      stats: {
+        topicsTaught: 0,
+        audioSeconds: 0
+      },
+      speechRate: 1.0,
+      activeVoice: null,
+      serverStats: null,
+      abortController: null,
+      keepAliveTimer: null,
+      speechRecognition: null,
+      isRecordingVoice: false,
+      pluginsList: [],
+      activePluginId: 'git-diff-auditor',
+      activePluginFilter: 'all'
+    };
+
+    // Audio Visualizer Canvas Setup
+    let animFrameId = null;
+    const canvas = document.getElementById('audioWaveCanvas');
+    const canvasCtx = canvas ? canvas.getContext('2d') : null;
+
+    function resizeCanvas() {
+      if (!canvas) return;
+      canvas.width = canvas.parentElement.clientWidth - 32;
+      canvas.height = 75;
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    function drawIdleWave() {
+      if (!canvasCtx || !canvas) return;
+      canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+      const cy = canvas.height / 2;
       
-      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
-        el.focus();
-        el.select();
+      canvasCtx.beginPath();
+      canvasCtx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
+      canvasCtx.lineWidth = 2;
+      canvasCtx.moveTo(0, cy);
+      canvasCtx.lineTo(canvas.width, cy);
+      canvasCtx.stroke();
+    }
+
+    function drawActiveWave(timestamp) {
+      if (!canvasCtx || !canvas) return;
+      canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+      const cy = canvas.height / 2;
+      const count = 36;
+      const barWidth = Math.max(3, (canvas.width / count) - 4);
+      const step = canvas.width / count;
+
+      // 1. Draw glowing acoustic frequency bars
+      for (let i = 0; i < count; i++) {
+        const x = i * step + 2;
+        const barHeightFactor = Math.abs(Math.sin((i * 0.35) + (timestamp * 0.007)) * Math.cos((i * 0.18) + (timestamp * 0.004)));
+        const amp = AppState.currentSession.isPlaying ? 28 : (AppState.waitingForNextSentence ? 10 : 2);
+        const h = Math.max(3, barHeightFactor * amp);
+
+        const grad = canvasCtx.createLinearGradient(0, cy - h, 0, cy + h);
+        grad.addColorStop(0, 'rgba(56, 189, 248, 0.85)');
+        grad.addColorStop(0.5, 'rgba(99, 102, 241, 0.7)');
+        grad.addColorStop(1, 'rgba(56, 189, 248, 0.85)');
+
+        canvasCtx.fillStyle = grad;
+        canvasCtx.beginPath();
+        canvasCtx.roundRect(x, cy - h, barWidth, h * 2, 2);
+        canvasCtx.fill();
+      }
+
+      // 2. Overlay dynamic central wave crest
+      canvasCtx.beginPath();
+      canvasCtx.strokeStyle = 'rgba(56, 189, 248, 0.95)';
+      canvasCtx.lineWidth = 2.5;
+      for (let i = 0; i <= count; i++) {
+        const x = i * step;
+        const wave = Math.sin((i * 0.4) + (timestamp * 0.009));
+        const amp = AppState.currentSession.isPlaying ? 16 : 2;
+        const y = cy + (wave * amp);
+        if (i === 0) canvasCtx.moveTo(x, y);
+        else canvasCtx.lineTo(x, y);
+      }
+      canvasCtx.stroke();
+
+      if (AppState.currentSession.isPlaying || AppState.waitingForNextSentence) {
+        animFrameId = requestAnimationFrame(drawActiveWave);
       } else {
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
+        drawIdleWave();
       }
     }
 
-    function speakElement(id) {
-      highlightElement(id);
-      const el = document.getElementById(id);
-      const text = el ? (el.value || el.innerText || el.textContent || '').trim() : '';
-      window.postMessage({ type: 'DOCVEX_TRIGGER_TEACH', text }, '*');
+    // Binaural Focus Soundscape Engine (Web Audio API — Zero Assets)
+    const FocusSoundscape = {
+      audioCtx: null,
+      oscLeft: null,
+      oscRight: null,
+      merger: null,
+      noiseNode: null,
+      filterNode: null,
+      gainNode: null,
+      active: false,
+      mode: 'gamma',
+      volume: 0.3,
+
+      init() {
+        if (!this.audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) {
+            this.audioCtx = new AudioContextClass();
+          }
+        }
+      },
+
+      start() {
+        this.init();
+        if (!this.audioCtx) return;
+        if (this.audioCtx.state === 'suspended') {
+          this.audioCtx.resume();
+        }
+        this.stop();
+
+        this.gainNode = this.audioCtx.createGain();
+        this.gainNode.gain.setValueAtTime(this.volume * 0.15, this.audioCtx.currentTime);
+        this.gainNode.connect(this.audioCtx.destination);
+
+        if (this.mode === 'gamma' || this.mode === 'alpha') {
+          const baseFreq = 200;
+          const diff = this.mode === 'gamma' ? 40 : 10;
+
+          this.merger = this.audioCtx.createChannelMerger(2);
+
+          this.oscLeft = this.audioCtx.createOscillator();
+          this.oscLeft.type = 'sine';
+          this.oscLeft.frequency.setValueAtTime(baseFreq, this.audioCtx.currentTime);
+          this.oscLeft.connect(this.merger, 0, 0);
+
+          this.oscRight = this.audioCtx.createOscillator();
+          this.oscRight.type = 'sine';
+          this.oscRight.frequency.setValueAtTime(baseFreq + diff, this.audioCtx.currentTime);
+          this.oscRight.connect(this.merger, 0, 1);
+
+          this.merger.connect(this.gainNode);
+          this.oscLeft.start();
+          this.oscRight.start();
+        } else if (this.mode === 'brown') {
+          const bufferSize = this.audioCtx.sampleRate * 2;
+          const buffer = this.audioCtx.createBuffer(1, bufferSize, this.audioCtx.sampleRate);
+          const data = buffer.getChannelData(0);
+          let lastOut = 0.0;
+          for (let i = 0; i < bufferSize; i++) {
+            const white = Math.random() * 2 - 1;
+            data[i] = (lastOut + (0.02 * white)) / 1.02;
+            lastOut = data[i];
+            data[i] *= 3.5;
+          }
+
+          this.noiseNode = this.audioCtx.createBufferSource();
+          this.noiseNode.buffer = buffer;
+          this.noiseNode.loop = true;
+
+          this.filterNode = this.audioCtx.createBiquadFilter();
+          this.filterNode.type = 'lowpass';
+          this.filterNode.frequency.setValueAtTime(420, this.audioCtx.currentTime);
+
+          this.noiseNode.connect(this.filterNode);
+          this.filterNode.connect(this.gainNode);
+          this.noiseNode.start();
+        }
+
+        this.active = true;
+        this.updateUI();
+      },
+
+      stop() {
+        if (this.oscLeft) {
+          try { this.oscLeft.stop(); } catch {}
+          this.oscLeft.disconnect();
+          this.oscLeft = null;
+        }
+        if (this.oscRight) {
+          try { this.oscRight.stop(); } catch {}
+          this.oscRight.disconnect();
+          this.oscRight = null;
+        }
+        if (this.noiseNode) {
+          try { this.noiseNode.stop(); } catch {}
+          this.noiseNode.disconnect();
+          this.noiseNode = null;
+        }
+        if (this.merger) {
+          this.merger.disconnect();
+          this.merger = null;
+        }
+        if (this.gainNode) {
+          this.gainNode.disconnect();
+          this.gainNode = null;
+        }
+        this.active = false;
+        this.updateUI();
+      },
+
+      toggle() {
+        if (this.active) {
+          this.stop();
+        } else {
+          this.start();
+        }
+      },
+
+      setVolume(val) {
+        this.volume = Math.max(0, Math.min(1, val / 100));
+        if (this.gainNode && this.audioCtx) {
+          this.gainNode.gain.setValueAtTime(this.volume * 0.15, this.audioCtx.currentTime);
+        }
+        const label = document.getElementById('focusVolLabel');
+        if (label) label.textContent = `${Math.round(this.volume * 100)}%`;
+      },
+
+      setMode(mode) {
+        this.mode = mode;
+        if (this.active) {
+          this.start();
+        }
+      },
+
+      updateUI() {
+        const badge = document.getElementById('focusStatusBadge');
+        const btn = document.getElementById('btnFocusToggle');
+        if (badge) {
+          badge.textContent = this.active ? 'Active' : 'Off';
+          badge.classList.toggle('active', this.active);
+        }
+        if (btn) {
+          btn.textContent = this.active ? 'Deactivate' : 'Activate 40Hz';
+          btn.classList.toggle('active', this.active);
+        }
+      }
+    };
+
+    // Built-in Developer Plugins Definitions
+    const DEFAULT_PLUGINS = [
+      {
+        id: 'git-diff-auditor',
+        name: 'Git Diff Acoustic Auditor',
+        category: 'VCS & Review',
+        version: '1.0.0',
+        icon: '🌿',
+        description: 'Parses unified git diffs, filters noise, identifies structural additions and deletions, and prepares an acoustic architectural summary.',
+        enabled: true
+      },
+      {
+        id: 'dsa-cinema',
+        name: 'DSA Mental Cinema Deconstructor',
+        category: 'Algorithms',
+        version: '1.0.0',
+        icon: '🎬',
+        description: 'Deconstructs common algorithmic patterns (Sliding Window, Two Pointers, Monotonic Stack, Topological Sort) into spatial diagrams and invariant rules.',
+        enabled: true
+      },
+      {
+        id: 'system-design-architect',
+        name: 'Distributed Systems Architect',
+        category: 'Databases & Systems',
+        version: '1.0.0',
+        icon: '🌐',
+        description: 'Deconstructs distributed systems patterns (Raft consensus, Consistent Hashing, LSM-trees, Event Sourcing) into ASCII topology diagrams, failure domains, and acoustic walkthroughs.',
+        enabled: true
+      },
+      {
+        id: 'regex-decoder',
+        name: 'Regex Verbal Decoder & ReDoS Guard',
+        category: 'Dev Tools',
+        version: '1.0.0',
+        icon: '🔍',
+        description: 'Deconstructs cryptographic regular expressions into plain-English verbal walkthroughs and analyzes catastrophic backtracking (ReDoS) hazards.',
+        enabled: true
+      },
+      {
+        id: 'sql-explain-analyst',
+        name: 'SQL Explain Query Plan Analyst',
+        category: 'Databases & Systems',
+        version: '1.0.0',
+        icon: '⚡',
+        description: 'Parses SQL EXPLAIN and EXPLAIN ANALYZE query plans, identifies sequential table scans, sort spills to disk, and formulates acoustic optimization guidance.',
+        enabled: true
+      },
+      {
+        id: 'obsidian-vault',
+        name: 'Obsidian Knowledge Graph Exporter',
+        category: 'Knowledge Base',
+        version: '1.0.0',
+        icon: '💎',
+        description: 'Converts acoustic sessions into Obsidian-compatible markdown with frontmatter metadata, [[wikilinks]], tags, and rich callouts.',
+        enabled: true
+      },
+      {
+        id: 'anki-deck',
+        name: 'Anki Spaced-Repetition Generator',
+        category: 'Active Recall',
+        version: '1.0.0',
+        icon: '🎴',
+        description: 'Generates active recall flashcards with cloze deletions ({{c1::...}}) and Anki-importable TSV rows from acoustic sessions.',
+        enabled: true
+      },
+      {
+        id: 'podcast-compiler',
+        name: 'Podcast & Commute Episode Compiler',
+        category: 'Audio Production',
+        version: '1.0.0',
+        icon: '🎙️',
+        description: 'Compiles multiple acoustic learning sessions into a continuous structured audio episode with introductions, chapter markers, and transition pauses.',
+        enabled: true
+      }
+    ];
+
+    const PLUGIN_WORKBENCH_PRESETS = {
+      'git-diff-auditor': {
+        auth: 'diff --git a/server/auth.js b/server/auth.js\\n--- a/server/auth.js\\n+++ b/server/auth.js\\n@@ -14,3 +14,6 @@\\n-const token = req.cookies.authToken;\\n+const token = req.headers.authorization?.replace(/^Bearer\\\\s+/, "");\\n+if (!token) throw new AuthError("Missing Bearer Token");\\n+const verified = jwt.verify(token, config.JWT_PUBLIC_KEY, { algorithms: ["RS256"] });\\n+req.user = verified.sub;'.replace(/\\n/g, '\n'),
+        cache: 'diff --git a/cache/lru.js b/cache/lru.js\\n--- a/cache/lru.js\\n+++ b/cache/lru.js\\n@@ -40,2 +40,5 @@\\n-this.map.delete(key);\\n+const node = this.lookup.get(key);\\n+if (node) {\\n+  this.detachNode(node);\\n+  this.attachToHead(node);\\n+}'.replace(/\\n/g, '\n')
+      },
+      'sql-explain-analyst': {
+        seqScan: 'Sort (cost=24500.00..24600.00 rows=35000 width=128)\\n  Sort Key: created_at DESC\\n  Sort Method: external merge Disk: 4096kB\\n  ->  Seq Scan on telemetry_events (cost=0.00..18450.00 rows=35000 width=128)\\n        Filter: (tenant_id = 42)\\n        Rows Removed by Filter: 850000'.replace(/\\n/g, '\n'),
+        indexScan: "Index Scan using idx_users_email on users (cost=0.42..8.44 rows=1 width=72)\\n  Index Cond: (email = 'alex@docvex.internal'::text)".replace(/\\n/g, '\n')
+      },
+      'regex-decoder': {
+        lookahead: '/^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{10,}$/',
+        redos: '/^([a-zA-Z0-9]+)+$/',
+        semver: '/^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?$/'
+      }
+    };
+
+    // Load Plugins from REST API
+    async function loadPluginsData() {
+      try {
+        const res = await fetch('/api/plugins');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.plugins) && data.plugins.length > 0) {
+            AppState.pluginsList = data.plugins;
+          } else {
+            AppState.pluginsList = DEFAULT_PLUGINS;
+          }
+        } else {
+          AppState.pluginsList = DEFAULT_PLUGINS;
+        }
+      } catch {
+        AppState.pluginsList = DEFAULT_PLUGINS;
+      }
+
+      updatePluginsMetricsUI();
+      renderPluginsGrid();
+      renderActiveWorkbench();
     }
+
+    function updatePluginsMetricsUI() {
+      const activeCount = AppState.pluginsList.filter(p => p.enabled).length;
+      const totalCount = AppState.pluginsList.length;
+      const countEl = document.getElementById('pluginsActiveCount');
+      const navCount = document.getElementById('navPluginsCount');
+      if (countEl) countEl.textContent = `${activeCount} / ${totalCount} Active`;
+      if (navCount) navCount.textContent = totalCount;
+    }
+
+    function filterPluginsByCategory(cat) {
+      AppState.activePluginFilter = cat;
+      const filters = document.getElementById('pluginCategoryFilters');
+      if (filters) {
+        filters.querySelectorAll('.plugin-chip').forEach(btn => {
+          btn.classList.toggle('active', btn.textContent.toLowerCase().includes(cat.toLowerCase()) || (cat === 'all' && btn.textContent.includes('All')));
+        });
+      }
+      renderPluginsGrid();
+    }
+
+    function renderPluginsGrid() {
+      const grid = document.getElementById('pluginsCardsGrid');
+      if (!grid) return;
+      grid.replaceChildren();
+
+      const filtered = AppState.pluginsList.filter(p => {
+        if (AppState.activePluginFilter === 'all') return true;
+        return p.category.toLowerCase().includes(AppState.activePluginFilter.toLowerCase());
+      });
+
+      filtered.forEach(p => {
+        const card = document.createElement('div');
+        card.className = `plugin-card-neu ${p.id === AppState.activePluginId ? 'selected' : ''}`;
+        card.onclick = () => selectPluginForWorkbench(p.id);
+
+        const top = document.createElement('div');
+        top.className = 'plugin-card-top';
+
+        const icon = document.createElement('span');
+        icon.className = 'plugin-card-icon';
+        icon.textContent = p.icon;
+        top.appendChild(icon);
+
+        const cat = document.createElement('span');
+        cat.className = 'plugin-card-cat';
+        cat.textContent = p.category;
+        top.appendChild(cat);
+        card.appendChild(top);
+
+        const info = document.createElement('div');
+        info.className = 'plugin-card-info';
+
+        const title = document.createElement('h3');
+        title.textContent = p.name;
+        info.appendChild(title);
+
+        const desc = document.createElement('p');
+        desc.textContent = p.description;
+        info.appendChild(desc);
+        card.appendChild(info);
+
+        const foot = document.createElement('div');
+        foot.className = 'plugin-card-foot';
+
+        const statusTag = document.createElement('span');
+        statusTag.className = `plugin-status-tag ${p.enabled ? '' : 'disabled'}`;
+        statusTag.textContent = p.enabled ? '● Active' : '○ Disabled';
+        foot.appendChild(statusTag);
+
+        const selBtn = document.createElement('button');
+        selBtn.className = 'plugin-select-btn';
+        selBtn.textContent = p.id === AppState.activePluginId ? 'Selected' : 'Open Console';
+        foot.appendChild(selBtn);
+
+        card.appendChild(foot);
+        grid.appendChild(card);
+      });
+    }
+
+    function selectPluginForWorkbench(id) {
+      AppState.activePluginId = id;
+      renderPluginsGrid();
+      renderActiveWorkbench();
+
+      const wb = document.getElementById('pluginWorkbenchCard');
+      if (wb) {
+        const top = wb.getBoundingClientRect().top + window.scrollY - 80;
+        window.scrollTo({ top: Math.max(0, top), left: 0, behavior: 'smooth' });
+      }
+    }
+
+    async function toggleActivePluginEnable() {
+      const plugin = AppState.pluginsList.find(p => p.id === AppState.activePluginId);
+      if (!plugin) return;
+
+      const newEnabled = !plugin.enabled;
+      try {
+        const res = await fetch('/api/plugins/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pluginId: plugin.id, enabled: newEnabled })
+        });
+        if (res.ok) {
+          plugin.enabled = newEnabled;
+        } else {
+          plugin.enabled = newEnabled;
+        }
+      } catch {
+        plugin.enabled = newEnabled;
+      }
+
+      updatePluginsMetricsUI();
+      renderPluginsGrid();
+      renderActiveWorkbench();
+      showToast(`${plugin.name} is now ${plugin.enabled ? 'Active' : 'Disabled'}.`);
+    }
+
+    function renderActiveWorkbench() {
+      const container = document.getElementById('workbenchDynamicBody');
+      if (!container) return;
+      container.replaceChildren();
+
+      const plugin = AppState.pluginsList.find(p => p.id === AppState.activePluginId) || AppState.pluginsList[0] || DEFAULT_PLUGINS[0];
+      if (!plugin) return;
+
+      const iconEl = document.getElementById('wbPluginIcon');
+      const nameEl = document.getElementById('wbPluginName');
+      const catEl = document.getElementById('wbPluginCategory');
+      const toggleBtn = document.getElementById('wbToggleEnableBtn');
+
+      if (iconEl) iconEl.textContent = plugin.icon;
+      if (nameEl) nameEl.textContent = plugin.name;
+      if (catEl) catEl.textContent = `${plugin.category} • Version ${plugin.version}`;
+      if (toggleBtn) {
+        toggleBtn.textContent = plugin.enabled ? 'Active' : 'Disabled';
+        toggleBtn.style.color = plugin.enabled ? 'var(--emerald)' : 'var(--text-dim)';
+      }
+
+      const resBox = document.getElementById('workbenchResultsBox');
+      if (resBox) resBox.style.display = 'none';
+
+      if (plugin.id === 'git-diff-auditor') {
+        const group = document.createElement('div');
+        group.className = 'wb-field-group';
+
+        const label = document.createElement('label');
+        label.className = 'wb-label';
+        label.textContent = 'Unified Git Diff Patch:';
+        group.appendChild(label);
+
+        const presetsRow = document.createElement('div');
+        presetsRow.className = 'wb-presets-row';
+
+        const p1 = document.createElement('button');
+        p1.className = 'wb-preset-btn active';
+        p1.textContent = 'JWT Auth Refactor Diff';
+        p1.onclick = () => {
+          textarea.value = PLUGIN_WORKBENCH_PRESETS['git-diff-auditor'].auth;
+          presetsRow.querySelectorAll('.wb-preset-btn').forEach(b => b.classList.remove('active'));
+          p1.classList.add('active');
+        };
+        presetsRow.appendChild(p1);
+
+        const p2 = document.createElement('button');
+        p2.className = 'wb-preset-btn';
+        p2.textContent = 'LRU Cache Eviction Diff';
+        p2.onclick = () => {
+          textarea.value = PLUGIN_WORKBENCH_PRESETS['git-diff-auditor'].cache;
+          presetsRow.querySelectorAll('.wb-preset-btn').forEach(b => b.classList.remove('active'));
+          p2.classList.add('active');
+        };
+        presetsRow.appendChild(p2);
+
+        group.appendChild(presetsRow);
+
+        const textarea = document.createElement('textarea');
+        textarea.id = 'wbGitDiffInput';
+        textarea.className = 'wb-textarea';
+        textarea.value = PLUGIN_WORKBENCH_PRESETS['git-diff-auditor'].auth;
+        group.appendChild(textarea);
+
+        container.appendChild(group);
+      } else if (plugin.id === 'dsa-cinema') {
+        const group = document.createElement('div');
+        group.className = 'wb-field-group';
+
+        const label = document.createElement('label');
+        label.className = 'wb-label';
+        label.textContent = 'Algorithmic Pattern:';
+        group.appendChild(label);
+
+        const presetsRow = document.createElement('div');
+        presetsRow.className = 'wb-presets-row';
+
+        const patterns = [
+          { id: 'sliding-window', label: 'Sliding Window' },
+          { id: 'two-pointers', label: 'Two Pointers' },
+          { id: 'monotonic-stack', label: 'Monotonic Stack' },
+          { id: 'topological-sort', label: 'Topological Sort' }
+        ];
+
+        patterns.forEach((pat, idx) => {
+          const btn = document.createElement('button');
+          btn.className = `wb-preset-btn ${idx === 0 ? 'active' : ''}`;
+          btn.textContent = pat.label;
+          btn.onclick = () => {
+            input.value = pat.id;
+            presetsRow.querySelectorAll('.wb-preset-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+          };
+          presetsRow.appendChild(btn);
+        });
+
+        group.appendChild(presetsRow);
+
+        const input = document.createElement('input');
+        input.id = 'wbDsaInput';
+        input.className = 'wb-input';
+        input.value = 'sliding-window';
+        group.appendChild(input);
+
+        container.appendChild(group);
+      } else if (plugin.id === 'system-design-architect') {
+        const group = document.createElement('div');
+        group.className = 'wb-field-group';
+
+        const label = document.createElement('label');
+        label.className = 'wb-label';
+        label.textContent = 'Distributed System Topology:';
+        group.appendChild(label);
+
+        const presetsRow = document.createElement('div');
+        presetsRow.className = 'wb-presets-row';
+
+        const topologies = [
+          { id: 'consistent-hashing', label: 'Consistent Hashing Ring' },
+          { id: 'raft-consensus', label: 'Raft Consensus Protocol' },
+          { id: 'lsm-trees', label: 'LSM-Trees Storage Engine' },
+          { id: 'event-sourcing', label: 'Event Sourcing & CQRS' }
+        ];
+
+        topologies.forEach((top, idx) => {
+          const btn = document.createElement('button');
+          btn.className = `wb-preset-btn ${idx === 0 ? 'active' : ''}`;
+          btn.textContent = top.label;
+          btn.onclick = () => {
+            input.value = top.id;
+            presetsRow.querySelectorAll('.wb-preset-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+          };
+          presetsRow.appendChild(btn);
+        });
+
+        group.appendChild(presetsRow);
+
+        const input = document.createElement('input');
+        input.id = 'wbSysDesignInput';
+        input.className = 'wb-input';
+        input.value = 'consistent-hashing';
+        group.appendChild(input);
+
+        container.appendChild(group);
+      } else if (plugin.id === 'regex-decoder') {
+        const group = document.createElement('div');
+        group.className = 'wb-field-group';
+
+        const label = document.createElement('label');
+        label.className = 'wb-label';
+        label.textContent = 'Regular Expression Pattern:';
+        group.appendChild(label);
+
+        const presetsRow = document.createElement('div');
+        presetsRow.className = 'wb-presets-row';
+
+        const regexPresets = [
+          { id: 'lookahead', label: 'Password Lookahead' },
+          { id: 'redos', label: 'ReDoS Hazard: (a+)+' },
+          { id: 'semver', label: 'Semantic Versioning' }
+        ];
+
+        regexPresets.forEach((rp, idx) => {
+          const btn = document.createElement('button');
+          btn.className = `wb-preset-btn ${idx === 0 ? 'active' : ''}`;
+          btn.textContent = rp.label;
+          btn.onclick = () => {
+            input.value = PLUGIN_WORKBENCH_PRESETS['regex-decoder'][rp.id];
+            presetsRow.querySelectorAll('.wb-preset-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+          };
+          presetsRow.appendChild(btn);
+        });
+
+        group.appendChild(presetsRow);
+
+        const input = document.createElement('input');
+        input.id = 'wbRegexInput';
+        input.className = 'wb-input';
+        input.value = PLUGIN_WORKBENCH_PRESETS['regex-decoder'].lookahead;
+        group.appendChild(input);
+
+        container.appendChild(group);
+      } else if (plugin.id === 'sql-explain-analyst') {
+        const group = document.createElement('div');
+        group.className = 'wb-field-group';
+
+        const label = document.createElement('label');
+        label.className = 'wb-label';
+        label.textContent = 'SQL EXPLAIN / EXPLAIN ANALYZE Output:';
+        group.appendChild(label);
+
+        const presetsRow = document.createElement('div');
+        presetsRow.className = 'wb-presets-row';
+
+        const p1 = document.createElement('button');
+        p1.className = 'wb-preset-btn active';
+        p1.textContent = 'Postgres Seq Scan + Disk Sort';
+        p1.onclick = () => {
+          textarea.value = PLUGIN_WORKBENCH_PRESETS['sql-explain-analyst'].seqScan;
+          presetsRow.querySelectorAll('.wb-preset-btn').forEach(b => b.classList.remove('active'));
+          p1.classList.add('active');
+        };
+        presetsRow.appendChild(p1);
+
+        const p2 = document.createElement('button');
+        p2.className = 'wb-preset-btn';
+        p2.textContent = 'Index Scan (Fast Path)';
+        p2.onclick = () => {
+          textarea.value = PLUGIN_WORKBENCH_PRESETS['sql-explain-analyst'].indexScan;
+          presetsRow.querySelectorAll('.wb-preset-btn').forEach(b => b.classList.remove('active'));
+          p2.classList.add('active');
+        };
+        presetsRow.appendChild(p2);
+
+        group.appendChild(presetsRow);
+
+        const textarea = document.createElement('textarea');
+        textarea.id = 'wbSqlInput';
+        textarea.className = 'wb-textarea';
+        textarea.value = PLUGIN_WORKBENCH_PRESETS['sql-explain-analyst'].seqScan;
+        group.appendChild(textarea);
+
+        container.appendChild(group);
+      } else if (plugin.id === 'obsidian-vault') {
+        const group = document.createElement('div');
+        group.className = 'wb-field-group';
+
+        const label = document.createElement('label');
+        label.className = 'wb-label';
+        label.textContent = 'Session Source for Obsidian Markdown Export:';
+        group.appendChild(label);
+
+        const info = document.createElement('p');
+        info.style.fontSize = '0.84rem';
+        info.style.color = 'var(--text-muted)';
+        info.style.marginBottom = '10px';
+        info.textContent = AppState.currentSession.topic 
+          ? `Active Studio Session: "${AppState.currentSession.topic}" (${AppState.currentSession.sentences.length} sentences)`
+          : 'Using currently active session or preset session data to generate Markdown with frontmatter, [[wikilinks]], and Obsidian callouts.';
+        group.appendChild(info);
+
+        container.appendChild(group);
+      } else if (plugin.id === 'anki-deck') {
+        const group = document.createElement('div');
+        group.className = 'wb-field-group';
+
+        const label = document.createElement('label');
+        label.className = 'wb-label';
+        label.textContent = 'Spaced-Repetition Deck Generation:';
+        group.appendChild(label);
+
+        const info = document.createElement('p');
+        info.style.fontSize = '0.84rem';
+        info.style.color = 'var(--text-muted)';
+        info.style.marginBottom = '10px';
+        info.textContent = `Exports all ${AppState.history.length > 0 ? AppState.history.length : 1} session(s) into cloze-deletion active recall flashcards with tags and Anki-importable TSV rows.`;
+        group.appendChild(info);
+
+        container.appendChild(group);
+      } else if (plugin.id === 'podcast-compiler') {
+        const group = document.createElement('div');
+        group.className = 'wb-field-group';
+
+        const label = document.createElement('label');
+        label.className = 'wb-label';
+        label.textContent = 'Podcast Episode Title:';
+        group.appendChild(label);
+
+        const input = document.createElement('input');
+        input.id = 'wbPodcastTitleInput';
+        input.className = 'wb-input';
+        input.value = 'DocVex Deep Dive: High-Performance Systems';
+        group.appendChild(input);
+
+        const info = document.createElement('p');
+        info.style.fontSize = '0.84rem';
+        info.style.color = 'var(--text-muted)';
+        info.style.marginTop = '10px';
+        info.textContent = `Compiles ${Math.max(1, AppState.history.length)} session chapters into a continuous audio narration episode with introduction, musical interlude cues, and transitions.`;
+        group.appendChild(info);
+
+        container.appendChild(group);
+      }
+    }
+
+    async function runActivePluginWorkbench() {
+      const pluginId = AppState.activePluginId;
+      let input = {};
+
+      if (pluginId === 'git-diff-auditor') {
+        const diffText = document.getElementById('wbGitDiffInput')?.value || '';
+        if (!diffText.trim()) {
+          showToast('Please enter a git diff patch.', '⚠️');
+          return;
+        }
+        input = { diff: diffText };
+      } else if (pluginId === 'dsa-cinema') {
+        const pattern = document.getElementById('wbDsaInput')?.value || 'sliding-window';
+        input = { pattern };
+      } else if (pluginId === 'system-design-architect') {
+        const topic = document.getElementById('wbSysDesignInput')?.value || 'consistent-hashing';
+        input = { topic };
+      } else if (pluginId === 'regex-decoder') {
+        const pattern = document.getElementById('wbRegexInput')?.value || '';
+        input = { pattern };
+      } else if (pluginId === 'sql-explain-analyst') {
+        const plan = document.getElementById('wbSqlInput')?.value || '';
+        input = { plan };
+      } else if (pluginId === 'obsidian-vault') {
+        input = {
+          session: AppState.currentSession.sentences.length > 0 ? {
+            title: AppState.currentSession.topic || 'Acoustic Concept',
+            category: 'Engineering Systems',
+            snippet: document.getElementById('inputSelectedText')?.value || '',
+            mentalModel: AppState.currentSession.mentalModel || '',
+            diagram: AppState.currentSession.diagram || '',
+            gotchas: AppState.currentSession.gotchas || '',
+            sentences: AppState.currentSession.sentences
+          } : PRESETS.raft
+        };
+      } else if (pluginId === 'anki-deck') {
+        input = {
+          sessions: AppState.history.length > 0 ? AppState.history : [
+            {
+              title: AppState.currentSession.topic || PRESETS.attention.title,
+              category: 'Algorithms',
+              mentalModel: AppState.currentSession.mentalModel || PRESETS.attention.text,
+              snippet: PRESETS.attention.text,
+              gotchas: PRESETS.attention.gotchas
+            }
+          ]
+        };
+      } else if (pluginId === 'podcast-compiler') {
+        const episodeTitle = document.getElementById('wbPodcastTitleInput')?.value || 'DocVex Acoustic Deep Dive';
+        input = {
+          episodeTitle,
+          sessions: AppState.history.length > 0 ? AppState.history : [
+            {
+              title: PRESETS.attention.title,
+              category: PRESETS.attention.category,
+              mentalModel: 'Weighted vector spotlight.',
+              sentences: [{ text: 'Scaled dot product attention scores query and key vectors.' }]
+            },
+            {
+              title: PRESETS.eventloop.title,
+              category: PRESETS.eventloop.category,
+              mentalModel: 'Multi-phased airport baggage carousel.',
+              sentences: [{ text: 'Microtasks run to empty between every event loop phase.' }]
+            }
+          ]
+        };
+      }
+
+      const runBtn = document.getElementById('wbExecuteBtn');
+      if (runBtn) {
+        runBtn.textContent = 'Running…';
+        runBtn.disabled = true;
+      }
+
+      try {
+        const res = await fetch('/api/plugins/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pluginId, input })
+        });
+        const data = await res.json();
+        if (!data.success) {
+          showToast(data.error || 'Execution failed', '❌');
+          return;
+        }
+
+        renderWorkbenchResults(pluginId, data);
+        showToast('Plugin executed successfully!', '⚡');
+      } catch (err) {
+        showToast(`Plugin execution error: ${err.message}`, '❌');
+      } finally {
+        if (runBtn) {
+          runBtn.textContent = '⚡ Run Plugin';
+          runBtn.disabled = false;
+        }
+      }
+    }
+
+    function renderWorkbenchResults(pluginId, data) {
+      const box = document.getElementById('workbenchResultsBox');
+      const content = document.getElementById('workbenchResultsContent');
+      const actions = document.getElementById('workbenchResultActions');
+      if (!box || !content || !actions) return;
+
+      box.style.display = 'block';
+      content.replaceChildren();
+      actions.replaceChildren();
+
+      const speechScript = data.narrationScript || data.summaryScript || data.verbalExplanation;
+      if (speechScript) {
+        const readBtn = document.createElement('button');
+        readBtn.className = 'btn-neu-accent';
+        readBtn.textContent = '🎧 Read Aloud in Studio';
+        readBtn.onclick = () => {
+          readWorkbenchNarrativeAloud(speechScript, data.patternName || data.systemName || data.title || 'Plugin Narrative');
+        };
+        actions.appendChild(readBtn);
+      }
+
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'btn-neu-sm';
+      copyBtn.textContent = '📋 Copy Output';
+      copyBtn.onclick = () => {
+        const textToCopy = data.content || data.tsv || data.compiledScript || JSON.stringify(data, null, 2);
+        navigator.clipboard.writeText(textToCopy).then(() => {
+          showToast('Output copied to clipboard!', '📋');
+        });
+      };
+      actions.appendChild(copyBtn);
+
+      if (data.content || data.tsv || data.compiledScript) {
+        const dlBtn = document.createElement('button');
+        dlBtn.className = 'btn-neu-sm';
+        dlBtn.textContent = '💾 Download File';
+        dlBtn.onclick = () => {
+          const fn = data.filename || `docvex_${pluginId}_${Date.now()}.txt`;
+          const raw = data.content || data.tsv || data.compiledScript;
+          const mime = data.format === 'markdown/obsidian' ? 'text/markdown' : 'text/plain';
+          downloadWorkbenchResults(fn, raw, mime);
+        };
+        actions.appendChild(dlBtn);
+      }
+
+      if (data.diagram || data.asciiDiagram) {
+        const dTitle = document.createElement('h5');
+        dTitle.style.margin = '8px 0 4px 0';
+        dTitle.style.color = 'var(--cyan)';
+        dTitle.textContent = 'Mechanical Spatial Blueprint:';
+        content.appendChild(dTitle);
+
+        const pre = document.createElement('pre');
+        pre.className = 'ascii-blueprint';
+        pre.textContent = data.diagram || data.asciiDiagram;
+        content.appendChild(pre);
+      }
+
+      if (data.invariants && Array.isArray(data.invariants)) {
+        const invTitle = document.createElement('h5');
+        invTitle.style.margin = '14px 0 6px 0';
+        invTitle.style.color = 'var(--emerald)';
+        invTitle.textContent = 'Algorithmic Invariant Checkpoints:';
+        content.appendChild(invTitle);
+
+        const ul = document.createElement('ul');
+        ul.style.paddingLeft = '20px';
+        ul.style.color = '#e2e8f0';
+        data.invariants.forEach(inv => {
+          const li = document.createElement('li');
+          li.style.marginBottom = '4px';
+          li.textContent = inv;
+          ul.appendChild(li);
+        });
+        content.appendChild(ul);
+      }
+
+      if (data.failureDomains && Array.isArray(data.failureDomains)) {
+        const fdTitle = document.createElement('h5');
+        fdTitle.style.margin = '14px 0 6px 0';
+        fdTitle.style.color = 'var(--amber)';
+        fdTitle.textContent = 'Failure Domains & Partition Trade-offs:';
+        content.appendChild(fdTitle);
+
+        const ul = document.createElement('ul');
+        ul.style.paddingLeft = '20px';
+        ul.style.color = '#e2e8f0';
+        data.failureDomains.forEach(fd => {
+          const li = document.createElement('li');
+          li.style.marginBottom = '4px';
+          li.textContent = fd;
+          ul.appendChild(li);
+        });
+        content.appendChild(ul);
+      }
+
+      if (data.bottlenecks && Array.isArray(data.bottlenecks)) {
+        const bTitle = document.createElement('h5');
+        bTitle.style.margin = '14px 0 6px 0';
+        bTitle.style.color = 'var(--rose)';
+        bTitle.textContent = 'Identified Execution Bottlenecks:';
+        content.appendChild(bTitle);
+
+        const ul = document.createElement('ul');
+        ul.style.paddingLeft = '20px';
+        ul.style.color = '#fecdd3';
+        data.bottlenecks.forEach(b => {
+          const li = document.createElement('li');
+          li.style.marginBottom = '4px';
+          li.textContent = b;
+          ul.appendChild(li);
+        });
+        content.appendChild(ul);
+      }
+
+      if (data.recommendations && Array.isArray(data.recommendations)) {
+        const rTitle = document.createElement('h5');
+        rTitle.style.margin = '14px 0 6px 0';
+        rTitle.style.color = 'var(--cyan)';
+        rTitle.textContent = 'Optimization Recommendations:';
+        content.appendChild(rTitle);
+
+        const ul = document.createElement('ul');
+        ul.style.paddingLeft = '20px';
+        ul.style.color = '#e2e8f0';
+        data.recommendations.forEach(r => {
+          const li = document.createElement('li');
+          li.style.marginBottom = '4px';
+          li.textContent = r;
+          ul.appendChild(li);
+        });
+        content.appendChild(ul);
+      }
+
+      if (data.tokens && Array.isArray(data.tokens)) {
+        const tTitle = document.createElement('h5');
+        tTitle.style.margin = '14px 0 6px 0';
+        tTitle.style.color = 'var(--cyan)';
+        tTitle.textContent = 'Token Structural Assertions:';
+        content.appendChild(tTitle);
+
+        const tokenContainer = document.createElement('div');
+        tokenContainer.style.display = 'flex';
+        tokenContainer.style.flexDirection = 'column';
+        tokenContainer.style.gap = '6px';
+        data.tokens.forEach(tok => {
+          const row = document.createElement('div');
+          row.style.background = 'var(--neu-inset)';
+          row.style.padding = '6px 12px';
+          row.style.borderRadius = '8px';
+          row.style.fontSize = '0.82rem';
+
+          const code = document.createElement('code');
+          code.style.color = 'var(--cyan)';
+          code.style.fontWeight = 'bold';
+          code.textContent = tok.symbol;
+          row.appendChild(code);
+
+          const span = document.createElement('span');
+          span.style.marginLeft = '8px';
+          span.style.color = 'var(--text-muted)';
+          span.textContent = `— ${tok.meaning}`;
+          row.appendChild(span);
+
+          tokenContainer.appendChild(row);
+        });
+        content.appendChild(tokenContainer);
+      }
+
+      if (data.cards && Array.isArray(data.cards)) {
+        const cTitle = document.createElement('h5');
+        cTitle.style.margin = '14px 0 6px 0';
+        cTitle.style.color = 'var(--purple)';
+        cTitle.textContent = `Generated ${data.cards.length} Spaced-Repetition Cards:`;
+        content.appendChild(cTitle);
+
+        const pre = document.createElement('pre');
+        pre.className = 'ascii-blueprint';
+        pre.textContent = data.tsv;
+        content.appendChild(pre);
+      }
+
+      if (data.compiledScript || data.content) {
+        const sTitle = document.createElement('h5');
+        sTitle.style.margin = '14px 0 6px 0';
+        sTitle.style.color = 'var(--cyan)';
+        sTitle.textContent = 'Generated Text Output Preview:';
+        content.appendChild(sTitle);
+
+        const pre = document.createElement('pre');
+        pre.className = 'ascii-blueprint';
+        pre.textContent = (data.compiledScript || data.content).slice(0, 2000);
+        content.appendChild(pre);
+      }
+
+      if (speechScript) {
+        const scTitle = document.createElement('h5');
+        scTitle.style.margin = '14px 0 4px 0';
+        scTitle.style.color = 'var(--indigo)';
+        scTitle.textContent = 'Acoustic Narrative Audio Walkthrough:';
+        content.appendChild(scTitle);
+
+        const p = document.createElement('p');
+        p.style.fontSize = '0.88rem';
+        p.style.color = '#cbd5e1';
+        p.style.fontStyle = 'italic';
+        p.style.lineHeight = '1.5';
+        p.textContent = `"${speechScript}"`;
+        content.appendChild(p);
+      }
+
+      box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function readWorkbenchNarrativeAloud(text, title) {
+      if (!text) return;
+      stopActiveSpeech();
+      switchNavSection('studio');
+
+      AppState.currentSession.sentences = [
+        { text: `DocVex overview for ${title}.`, pauseAfterMs: 400 },
+        { text, pauseAfterMs: 600 }
+      ];
+      AppState.currentSession.currentIndex = 0;
+      AppState.currentSession.topic = title;
+      AppState.currentSession.mentalModel = text;
+
+      renderSentencesToUI();
+      playFromIndex(0);
+      showToast(`Narrating "${title}" via DocVex`, '🎧');
+    }
+
+    function downloadWorkbenchResults(filename, content, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // Section & Role Navigator
+    function switchNavSection(section) {
+      AppState.activeNavSection = section;
+
+      const studioBtn = document.getElementById('tabStudioBtn');
+      const pluginsBtn = document.getElementById('tabPluginsBtn');
+      const libBtn = document.getElementById('tabLibraryBtn');
+      const adminBtn = document.getElementById('tabAdminBtn');
+
+      studioBtn?.classList.toggle('active', section === 'studio');
+      pluginsBtn?.classList.toggle('active', section === 'plugins');
+      libBtn?.classList.toggle('active', section === 'library');
+      adminBtn?.classList.toggle('active', section === 'admin');
+
+      const viewLearner = document.getElementById('viewLearner');
+      const viewPlugins = document.getElementById('viewPlugins');
+      const viewAdmin = document.getElementById('viewAdmin');
+      const libraryAnchor = document.getElementById('librarySectionAnchor');
+
+      if (section === 'admin') {
+        AppState.activeTab = 'admin';
+        viewLearner?.classList.remove('active');
+        viewPlugins?.classList.remove('active');
+        viewAdmin?.classList.add('active');
+        fetchSystemStats();
+        fetchRetrievalDomains();
+        window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      } else if (section === 'plugins') {
+        AppState.activeTab = 'plugins';
+        viewLearner?.classList.remove('active');
+        viewAdmin?.classList.remove('active');
+        viewPlugins?.classList.add('active');
+        loadPluginsData();
+        window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      } else if (section === 'library') {
+        AppState.activeTab = 'learner';
+        viewAdmin?.classList.remove('active');
+        viewPlugins?.classList.remove('active');
+        viewLearner?.classList.add('active');
+        if (libraryAnchor) {
+          const top = libraryAnchor.getBoundingClientRect().top + window.scrollY - 80;
+          window.scrollTo({ top: Math.max(0, top), left: 0, behavior: 'smooth' });
+        }
+      } else { // 'studio'
+        AppState.activeTab = 'learner';
+        viewAdmin?.classList.remove('active');
+        viewPlugins?.classList.remove('active');
+        viewLearner?.classList.add('active');
+        window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      }
+    }
+
+    // Backwards-compatible alias for switchTab
+    function switchTab(tab) {
+      if (tab === 'admin') switchNavSection('admin');
+      else if (tab === 'plugins') switchNavSection('plugins');
+      else switchNavSection('studio');
+    }
+
+    // Blueprint Tab Switcher
+    function switchBlueprintTab(tab) {
+      AppState.activeBlueprintTab = tab;
+      document.getElementById('btnTabAnalogy').classList.toggle('active', tab === 'analogy');
+      document.getElementById('btnTabDiagram').classList.toggle('active', tab === 'diagram');
+      document.getElementById('btnTabGotchas').classList.toggle('active', tab === 'gotchas');
+
+      document.getElementById('paneAnalogy').classList.toggle('active', tab === 'analogy');
+      document.getElementById('paneDiagram').classList.toggle('active', tab === 'diagram');
+      document.getElementById('paneGotchas').classList.toggle('active', tab === 'gotchas');
+    }
+
+    // Preset Loader
+    function loadPreset(key) {
+      const p = PRESETS[key];
+      if (!p) return;
+      document.getElementById('inputTechnicalText').value = p.text;
+      document.getElementById('inputTopicTitle').value = p.title;
+      document.getElementById('inputCategory').value = p.category;
+
+      if (p.diagram) {
+        AppState.currentSession.diagram = p.diagram;
+        document.getElementById('blueprintDiagramText').textContent = p.diagram;
+      }
+      if (p.gotchas) {
+        AppState.currentSession.gotchas = p.gotchas;
+        document.getElementById('blueprintGotchasText').textContent = p.gotchas;
+      }
+      showToast('Loaded preset: ' + p.title);
+    }
+
+    function updateSpeedDisplay(val) {
+      AppState.speechRate = parseFloat(val);
+      document.getElementById('labelSpeedVal').textContent = val + 'x';
+      updateSpeedChipsActive();
+    }
+
+    function setSpeed(val) {
+      document.getElementById('sliderSpeed').value = val;
+      updateSpeedDisplay(val);
+    }
+
+    function updateSpeedChipsActive() {
+      const btns = document.querySelectorAll('.speed-chip-btn');
+      btns.forEach(b => {
+        const txt = b.textContent;
+        b.classList.toggle('active', txt.startsWith(AppState.speechRate + 'x') || (AppState.speechRate === 1.0 && txt.includes('1.0x')));
+      });
+    }
+
+    // Toast Notification Utility (Safe textContent)
+    function showToast(msg, icon = '✨') {
+      const toast = document.getElementById('toastNotification');
+      document.getElementById('toastMsg').textContent = msg;
+      document.getElementById('toastIcon').textContent = icon;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2800);
+    }
+
+    function toggleHelpModal(show) {
+      document.getElementById('helpModal').classList.toggle('show', Boolean(show));
+    }
+
+    // Best Voice Selector (Filtered against robotic voices like Alex)
+    function pickBestVoice() {
+      if (!window.speechSynthesis) return null;
+      const voices = window.speechSynthesis.getVoices();
+      if (!voices || voices.length === 0) return null;
+
+      const isBanned = (name) => {
+        const lower = name.toLowerCase();
+        return lower.includes('alex') || lower.includes('compact') || lower.includes('whisper') || lower.includes('bad');
+      };
+
+      const preferred = ['Daniel', 'Samantha', 'Google US English', 'Karen', 'Serena', 'Arthur', 'Victoria', 'Fiona'];
+      for (const p of preferred) {
+        const found = voices.find(v => v.name.includes(p) && !isBanned(v.name));
+        if (found) return found;
+      }
+      return voices.find(v => !isBanned(v.name) && v.lang.startsWith('en')) || voices[0];
+    }
+
+    // Chromium SpeechSynthesis Keep-Alive Heartbeat
+    function startKeepAlive() {
+      stopKeepAlive();
+      AppState.keepAliveTimer = setInterval(() => {
+        if (window.speechSynthesis && window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+          window.speechSynthesis.pause();
+          window.speechSynthesis.resume();
+        }
+      }, 10000);
+    }
+
+    function stopKeepAlive() {
+      if (AppState.keepAliveTimer) {
+        clearInterval(AppState.keepAliveTimer);
+        AppState.keepAliveTimer = null;
+      }
+    }
+
+    // Web Speech Synthesis Controller
+    function speakSentence(text, onEnd) {
+      if (!window.speechSynthesis) {
+        if (onEnd) onEnd();
+        return;
+      }
+      window.speechSynthesis.cancel();
+      startKeepAlive();
+
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.rate = AppState.speechRate;
+      const v = pickBestVoice();
+      if (v) utter.voice = v;
+
+      let called = false;
+      const done = () => {
+        if (called) return;
+        called = true;
+        stopKeepAlive();
+        if (onEnd) onEnd();
+      };
+
+      utter.onend = done;
+      utter.onerror = done;
+
+      window.speechSynthesis.speak(utter);
+    }
+
+    function stopActiveSpeech() {
+      stopKeepAlive();
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      AppState.currentSession.isPlaying = false;
+      AppState.currentSession.isPaused = false;
+      AppState.waitingForNextSentence = false;
+      updatePlaybackUI();
+      updateScrubberActive(-1);
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+      drawIdleWave();
+    }
+
+    function togglePlayPause() {
+      if (AppState.currentSession.sentences.length === 0) return;
+
+      if (AppState.currentSession.isPlaying) {
+        if (window.speechSynthesis) window.speechSynthesis.pause();
+        AppState.currentSession.isPlaying = false;
+        AppState.currentSession.isPaused = true;
+      } else {
+        if (AppState.currentSession.isPaused && window.speechSynthesis) {
+          window.speechSynthesis.resume();
+          AppState.currentSession.isPlaying = true;
+          AppState.currentSession.isPaused = false;
+        } else {
+          playFromIndex(AppState.currentSession.currentIndex);
+        }
+      }
+      updatePlaybackUI();
+    }
+
+    function playFromIndex(index) {
+      if (index >= AppState.currentSession.sentences.length) {
+        if (AppState.isStreaming) {
+          AppState.waitingForNextSentence = true;
+          AppState.currentSession.currentIndex = index;
+          updatePlaybackUI();
+          return;
+        }
+        stopActiveSpeech();
+        showToast('Explanation completed.', '🎓');
+        return;
+      }
+
+      AppState.waitingForNextSentence = false;
+      AppState.currentSession.currentIndex = index;
+      AppState.currentSession.isPlaying = true;
+      AppState.currentSession.isPaused = false;
+      updatePlaybackUI();
+      highlightActiveSentence(index);
+
+      if (!animFrameId) {
+        animFrameId = requestAnimationFrame(drawActiveWave);
+      }
+
+      const text = AppState.currentSession.sentences[index].text;
+      speakSentence(text, () => {
+        if (AppState.currentSession.isPlaying) {
+          playFromIndex(AppState.currentSession.currentIndex + 1);
+        }
+      });
+    }
+
+    function nextSentence() {
+      if (AppState.currentSession.currentIndex < AppState.currentSession.sentences.length - 1) {
+        playFromIndex(AppState.currentSession.currentIndex + 1);
+      }
+    }
+
+    function prevSentence() {
+      if (AppState.currentSession.currentIndex > 0) {
+        playFromIndex(AppState.currentSession.currentIndex - 1);
+      }
+    }
+
+    function replayCurrentSentence() {
+      playFromIndex(AppState.currentSession.currentIndex);
+    }
+
+    function updatePlaybackUI() {
+      const btn = document.getElementById('btnPlayPause');
+      const badge = document.getElementById('playerStatusBadge');
+      const stateText = document.getElementById('playbackStateText');
+      const stateDot = document.getElementById('playbackStateDot');
+
+      if (AppState.waitingForNextSentence) {
+        btn.textContent = '⏳';
+        badge.textContent = 'Buffering…';
+        badge.style.color = 'var(--amber)';
+        stateText.textContent = 'Awaiting next acoustic sentence…';
+        stateDot.style.background = 'var(--amber)';
+      } else if (AppState.currentSession.isPlaying) {
+        btn.textContent = '⏸️';
+        badge.textContent = 'Speaking';
+        badge.style.color = 'var(--emerald)';
+        stateText.textContent = `Sentence ${AppState.currentSession.currentIndex + 1} of ${AppState.currentSession.sentences.length}`;
+        stateDot.style.background = 'var(--emerald)';
+      } else if (AppState.currentSession.isPaused) {
+        btn.textContent = '▶️';
+        badge.textContent = 'Paused';
+        badge.style.color = 'var(--amber)';
+        stateText.textContent = 'Playback Paused';
+        stateDot.style.background = 'var(--amber)';
+      } else {
+        btn.textContent = '▶️';
+        badge.textContent = 'Idle';
+        badge.style.color = 'var(--cyan)';
+        stateText.textContent = 'Idle';
+        stateDot.style.background = 'var(--cyan)';
+      }
+    }
+
+    // Segmented Sentence Scrubber (Wispr Flow Style)
+    function renderScrubber() {
+      const scrubber = document.getElementById('sentenceScrubberTrack');
+      if (!scrubber) return;
+      scrubber.replaceChildren();
+
+      const total = AppState.currentSession.sentences.length;
+      if (total === 0) {
+        scrubber.style.display = 'none';
+        return;
+      }
+      scrubber.style.display = 'flex';
+
+      for (let i = 0; i < total; i++) {
+        const seg = document.createElement('div');
+        seg.className = 'scrubber-segment' + 
+          (i < AppState.currentSession.currentIndex ? ' played' : '') +
+          (i === AppState.currentSession.currentIndex ? ' active' : '');
+        seg.title = `Sentence ${i + 1}: ${AppState.currentSession.sentences[i].text.slice(0, 50)}…`;
+        seg.onclick = () => playFromIndex(i);
+        scrubber.appendChild(seg);
+      }
+    }
+
+    function updateScrubberActive(index) {
+      const scrubber = document.getElementById('sentenceScrubberTrack');
+      if (!scrubber) return;
+      const segments = scrubber.querySelectorAll('.scrubber-segment');
+      segments.forEach((seg, i) => {
+        seg.classList.toggle('played', index >= 0 && i < index);
+        seg.classList.toggle('active', i === index);
+      });
+    }
+
+    // Developer Voice Dictation for Technical Snippet Input
+    let isDictatingSnippet = false;
+    let snippetRecognition = null;
+
+    function toggleInputDictation() {
+      const btn = document.getElementById('btnDictateSnippet');
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+      if (!SpeechRecognition) {
+        showToast('Speech Recognition not supported in this browser. Please type directly.', '⚠️');
+        return;
+      }
+
+      if (isDictatingSnippet) {
+        if (snippetRecognition) snippetRecognition.stop();
+        return;
+      }
+
+      const rec = new SpeechRecognition();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = 'en-US';
+
+      snippetRecognition = rec;
+      isDictatingSnippet = true;
+      btn.classList.add('recording');
+      btn.textContent = '🔴 Listening…';
+      showToast('Dictating note… Speak code or technical query', '🎙️');
+
+      const textarea = document.getElementById('inputTechnicalText');
+      const initialValue = textarea.value ? textarea.value + '\n' : '';
+
+      rec.onresult = (e) => {
+        let interim = '';
+        for (let i = 0; i < e.results.length; i++) {
+          interim += e.results[i][0].transcript + ' ';
+        }
+        textarea.value = initialValue + interim.trim();
+      };
+
+      rec.onerror = () => {
+        isDictatingSnippet = false;
+        btn.classList.remove('recording');
+        btn.replaceChildren();
+        const icon = document.createElement('span');
+        icon.textContent = '🎙️';
+        btn.appendChild(icon);
+        btn.appendChild(document.createTextNode(' Dictate Note'));
+      };
+
+      rec.onend = () => {
+        isDictatingSnippet = false;
+        btn.classList.remove('recording');
+        btn.replaceChildren();
+        const icon = document.createElement('span');
+        icon.textContent = '🎙️';
+        btn.appendChild(icon);
+        btn.appendChild(document.createTextNode(' Dictate Note'));
+        showToast('Dictation complete.', '✨');
+      };
+
+      rec.start();
+    }
+
+    function highlightActiveSentence(index) {
+      const container = document.getElementById('sentenceStreamContainer');
+      const items = container.querySelectorAll('.sentence-block');
+      items.forEach((item, i) => {
+        item.classList.toggle('active', i === index);
+      });
+      if (items[index] && container) {
+        // Safe container-only scrolling: never scrolls window horizontally or vertically!
+        const itemTop = items[index].offsetTop;
+        const containerTop = container.offsetTop;
+        const targetScroll = itemTop - containerTop - 12;
+        container.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+      }
+      updateScrubberActive(index);
+    }
+
+    // Safe Sentence Visualizer Renderer (Zero innerHTML)
+    function renderSentencesToUI() {
+      const container = document.getElementById('sentenceStreamContainer');
+      container.replaceChildren();
+
+      if (AppState.currentSession.sentences.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.color = 'var(--text-dim)';
+        empty.style.fontSize = '0.8rem';
+        empty.style.textAlign = 'center';
+        empty.style.padding = '18px';
+        empty.textContent = 'Sentence segmentation blocks and acoustic pauses will stream here in real time.';
+        container.appendChild(empty);
+        document.getElementById('sentenceCountBadge').textContent = '0 sentences';
+        renderScrubber();
+        return;
+      }
+
+      document.getElementById('sentenceCountBadge').textContent = `${AppState.currentSession.sentences.length} sentences`;
+
+      AppState.currentSession.sentences.forEach((s, idx) => {
+        const div = document.createElement('div');
+        div.className = 'sentence-block' + (idx === AppState.currentSession.currentIndex ? ' active' : '');
+        div.onclick = () => playFromIndex(idx);
+
+        const numSpan = document.createElement('span');
+        numSpan.className = 'sentence-num';
+        numSpan.textContent = `[${idx + 1}]`;
+
+        const textNode = document.createTextNode(s.text);
+
+        div.appendChild(numSpan);
+        div.appendChild(textNode);
+
+        if (s.pauseAfterMs && s.pauseAfterMs > 0) {
+          const pauseBadge = document.createElement('span');
+          pauseBadge.className = 'pause-badge';
+          pauseBadge.textContent = `+${s.pauseAfterMs}ms pause`;
+          div.appendChild(pauseBadge);
+        }
+
+        container.appendChild(div);
+      });
+
+      renderScrubber();
+    }
+
+    // Trigger Teaching Session (SSE Stream)
+    async function triggerTeachSession() {
+      const text = document.getElementById('inputTechnicalText').value.trim();
+      if (!text) {
+        showToast('Please select or paste some code/documentation first.', '⚠️');
+        return;
+      }
+
+      const topicTitle = document.getElementById('inputTopicTitle').value.trim() || 'Technical Architecture';
+      const category = document.getElementById('inputCategory').value;
+      const provider = document.getElementById('selectProvider').value;
+
+      stopActiveSpeech();
+      AppState.isStreaming = true;
+      AppState.waitingForNextSentence = false;
+      AppState.requestStartTime = performance.now();
+
+      AppState.currentSession.sentences = [];
+      AppState.currentSession.currentIndex = 0;
+      AppState.currentSession.fullExplanation = '';
+      AppState.currentSession.mentalModel = '';
+      AppState.currentSession.provider = provider;
+      AppState.currentSession.topic = topicTitle;
+      renderSentencesToUI();
+
+      const btn = document.getElementById('btnExplain');
+      btn.disabled = true;
+      btn.replaceChildren();
+      const loadSpan = document.createElement('span');
+      loadSpan.textContent = '⏳';
+      btn.appendChild(loadSpan);
+      btn.appendChild(document.createTextNode(' Synthesizing Mental Model…'));
+
+      document.getElementById('playerStatusBadge').textContent = 'Streaming…';
+
+      if (AppState.abortController) {
+        AppState.abortController.abort();
+      }
+      AppState.abortController = new AbortController();
+
+      try {
+        const res = await fetch('/teach', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text,
+            title: topicTitle,
+            provider,
+            stream: true
+          }),
+          signal: AppState.abortController.signal
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP error ${res.status}`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          let currentEvent = null;
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7).trim();
+            } else if (line.startsWith('data: ') && currentEvent) {
+              const dataStr = line.slice(6).trim();
+              try {
+                const data = JSON.parse(dataStr);
+                handleStreamEvent(currentEvent, data);
+              } catch {}
+              currentEvent = null;
+            }
+          }
+        }
+
+        AppState.isStreaming = false;
+        if (AppState.waitingForNextSentence) {
+          AppState.waitingForNextSentence = false;
+          stopActiveSpeech();
+          showToast('Explanation completed.', '🎓');
+        }
+
+        finishSession(text, category);
+      } catch (err) {
+        AppState.isStreaming = false;
+        if (err.name !== 'AbortError') {
+          showToast(`Error: ${err.message}`, '❌');
+          document.getElementById('playerStatusBadge').textContent = 'Error';
+        }
+      } finally {
+        btn.disabled = false;
+        btn.replaceChildren();
+        const doneSpan = document.createElement('span');
+        doneSpan.textContent = '⚡';
+        btn.appendChild(doneSpan);
+        btn.appendChild(document.createTextNode(' Explain & Listen Out Loud'));
+      }
+    }
+
+    function handleStreamEvent(event, data) {
+      if (event === 'speech_done') {
+        const sentenceText = data.text || data.sentence;
+        if (sentenceText) {
+          if (AppState.currentSession.sentences.length === 0 && AppState.requestStartTime) {
+            const ttfs = Math.round(performance.now() - AppState.requestStartTime);
+            const ttfsChip = document.getElementById('ttfsChip');
+            document.getElementById('ttfsVal').textContent = `${ttfs}ms`;
+            ttfsChip.style.display = 'flex';
+          }
+
+          const arrivingIdx = AppState.currentSession.sentences.length;
+          AppState.currentSession.sentences.push({
+            text: sentenceText,
+            pauseAfterMs: data.pauseAfterMs || 0
+          });
+          renderSentencesToUI();
+          
+          if (arrivingIdx === 0 && !AppState.currentSession.isPlaying && !AppState.currentSession.isPaused) {
+            playFromIndex(0);
+          } else if (AppState.waitingForNextSentence) {
+            AppState.waitingForNextSentence = false;
+            playFromIndex(arrivingIdx);
+          }
+        }
+      } else if (event === 'metadata') {
+        if (data.mentalModel) {
+          AppState.currentSession.mentalModel = data.mentalModel;
+          document.getElementById('mentalCinemaText').textContent = data.mentalModel;
+        }
+      } else if (event === 'token') {
+        AppState.currentSession.fullExplanation += (data.token || '');
+      } else if (event === 'local_insights') {
+        if (data.gotchas) {
+          AppState.currentSession.gotchas = data.gotchas;
+          document.getElementById('blueprintGotchasText').textContent = data.gotchas;
+        }
+        if (data.rawReasoning) {
+          // If rawReasoning contains diagrams or Gotchas
+          parseRawReasoning(data.rawReasoning);
+        }
+      }
+    }
+
+    function parseRawReasoning(raw) {
+      if (raw.includes('### 🧠 Mental Model')) {
+        const parts = raw.split('###');
+        for (const p of parts) {
+          if (p.includes('Mental Model')) {
+            const txt = p.replace('🧠 Mental Model', '').trim();
+            if (txt) {
+              AppState.currentSession.mentalModel = txt;
+              document.getElementById('mentalCinemaText').textContent = txt;
+            }
+          } else if (p.includes('Gotchas')) {
+            const txt = p.replace('⚠️ Critical Gotchas & Pitfalls', '').replace('Critical Gotchas', '').trim();
+            if (txt) {
+              AppState.currentSession.gotchas = txt;
+              document.getElementById('blueprintGotchasText').textContent = txt;
+            }
+          }
+        }
+      }
+    }
+
+    function finishSession(originalSnippet, category) {
+      if (!AppState.currentSession.mentalModel && AppState.currentSession.sentences[0]) {
+        AppState.currentSession.mentalModel = AppState.currentSession.sentences[0].text;
+        document.getElementById('mentalCinemaText').textContent = AppState.currentSession.mentalModel;
+      }
+
+      if (!AppState.currentSession.diagram) {
+        // Generate clean dynamic ASCII flow diagram based on topic
+        AppState.currentSession.diagram = `Input Concept: [ ${AppState.currentSession.topic} ]\n  │\n  ├── Mechanics: ${AppState.currentSession.sentences[0]?.text?.slice(0, 70) || 'Active Transformation'}...\n  └── Spatial Anchor: ${AppState.currentSession.mentalModel?.slice(0, 70) || 'Mental Model Active'}`;
+        document.getElementById('blueprintDiagramText').textContent = AppState.currentSession.diagram;
+      }
+
+      const historyItem = {
+        id: 'hist_' + Date.now(),
+        timestamp: new Date().toISOString(),
+        title: AppState.currentSession.topic,
+        category: category || 'Algorithms',
+        provider: AppState.currentSession.provider,
+        snippet: originalSnippet,
+        explanation: AppState.currentSession.fullExplanation || AppState.currentSession.sentences.map(s => s.text).join(' '),
+        mentalModel: AppState.currentSession.mentalModel,
+        diagram: AppState.currentSession.diagram,
+        gotchas: AppState.currentSession.gotchas,
+        sentences: [...AppState.currentSession.sentences],
+        starred: false
+      };
+
+      AppState.history.unshift(historyItem);
+      saveHistory();
+      renderHistoryCards();
+
+      AppState.stats.topicsTaught += 1;
+      AppState.stats.audioSeconds += Math.round(AppState.currentSession.sentences.length * 6);
+      updateStatsUI();
+      showToast('Acoustic model saved to library!', '🎉');
+    }
+
+    // Native Docy Microphone Voice Recognition
+    function toggleDocyMic() {
+      const btn = document.getElementById('btnDocyMic');
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+      if (!SpeechRecognition) {
+        showToast('Speech Recognition not supported in this browser. Please type below.', '⚠️');
+        return;
+      }
+
+      if (AppState.isRecordingVoice) {
+        if (AppState.speechRecognition) {
+          AppState.speechRecognition.stop();
+        }
+        return;
+      }
+
+      if (AppState.currentSession.isPlaying) {
+        togglePlayPause();
+      }
+
+      const rec = new SpeechRecognition();
+      rec.continuous = false;
+      rec.interimResults = true;
+      rec.lang = 'en-US';
+
+      AppState.speechRecognition = rec;
+      AppState.isRecordingVoice = true;
+      btn.classList.add('recording');
+      showToast('Listening… Say your doubt aloud', '🎙️');
+
+      rec.onresult = (e) => {
+        const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
+        document.getElementById('docyFollowupInput').value = transcript;
+      };
+
+      rec.onerror = () => {
+        AppState.isRecordingVoice = false;
+        btn.classList.remove('recording');
+      };
+
+      rec.onend = () => {
+        AppState.isRecordingVoice = false;
+        btn.classList.remove('recording');
+        const text = document.getElementById('docyFollowupInput').value.trim();
+        if (text) {
+          triggerFollowUpQuestion();
+        }
+      };
+
+      rec.start();
+    }
+
+    // Follow-up Question Handler
+    async function triggerFollowUpQuestion() {
+      const input = document.getElementById('docyFollowupInput');
+      const question = input.value.trim();
+      if (!question) return;
+
+      input.value = '';
+      showToast(`Docy answering: "${question}"`, '🎙️');
+
+      const prevContext = AppState.currentSession.sentences.map(s => s.text).join(' ');
+      try {
+        const res = await fetch('/teach', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: question,
+            title: `Follow-up: ${question.slice(0, 40)}`,
+            provider: AppState.currentSession.provider,
+            isFollowUp: true,
+            followUpContext: prevContext.slice(0, 1000)
+          })
+        });
+        const data = await res.json();
+        if (data.explanation) {
+          speakSentence(data.explanation);
+          showToast('Docy replied.', '🎙️');
+        }
+      } catch (err) {
+        showToast(`Docy error: ${err.message}`, '❌');
+      }
+    }
+
+    // History Library & Safe DOM Rendering
+    function loadHistory() {
+      try {
+        const saved = localStorage.getItem('docvex_history_v2');
+        if (saved) {
+          AppState.history = JSON.parse(saved);
+        } else {
+          AppState.history = [
+            {
+              id: 'hist_demo_1',
+              timestamp: new Date(Date.now() - 3600000).toISOString(),
+              title: PRESETS.attention.title,
+              category: 'Algorithms',
+              provider: 'hybrid',
+              snippet: PRESETS.attention.text,
+              explanation: "Imagine attention as a dynamic optical lens focusing on indexed filing cabinets. The query computes dot-product compatibility against all keys, normalizing the attention weights via softmax before gathering values into a single focused output vector.",
+              mentalModel: "Dynamic optical aperture focusing over a library of labeled filing cabinets.",
+              diagram: PRESETS.attention.diagram,
+              gotchas: PRESETS.attention.gotchas,
+              sentences: [
+                { text: "Imagine attention as a dynamic optical lens focusing on indexed filing cabinets.", pauseAfterMs: 0 },
+                { text: "The query computes dot-product compatibility against all keys, normalizing attention weights via softmax.", pauseAfterMs: 1000 },
+                { text: "Finally, the output gathers values into a single weighted representation without loss of structural alignment.", pauseAfterMs: 0 }
+              ],
+              starred: true
+            },
+            {
+              id: 'hist_demo_2',
+              timestamp: new Date(Date.now() - 86400000).toISOString(),
+              title: PRESETS.eventloop.title,
+              category: 'Runtimes',
+              provider: 'ollama',
+              snippet: PRESETS.eventloop.text,
+              explanation: "In Node.js, the microtask queue operates as an emergency priority VIP line. Whenever a task completes, the runtime drains all microtasks until completely empty before ever advancing to the next event loop stage.",
+              mentalModel: "VIP bypass gate that halts the conveyor belt until every priority ticket is handled.",
+              diagram: PRESETS.eventloop.diagram,
+              gotchas: PRESETS.eventloop.gotchas,
+              sentences: [
+                { text: "In Node.js, the microtask queue operates as an emergency priority VIP line.", pauseAfterMs: 0 },
+                { text: "Whenever any operation completes, microtasks drain to complete exhaustion before the event loop advances.", pauseAfterMs: 1000 }
+              ],
+              starred: false
+            }
+          ];
+          saveHistory();
+        }
+      } catch {
+        AppState.history = [];
+      }
+      AppState.stats.topicsTaught = AppState.history.length;
+      AppState.stats.audioSeconds = AppState.history.length * 45;
+      updateStatsUI();
+      renderHistoryCards();
+    }
+
+    function saveHistory() {
+      try {
+        localStorage.setItem('docvex_history_v2', JSON.stringify(AppState.history));
+      } catch {}
+    }
+
+    function updateStatsUI() {
+      document.getElementById('statTopicsTaught').textContent = AppState.history.length;
+      const mins = Math.round(AppState.stats.audioSeconds / 60);
+      document.getElementById('statAudioSeconds').textContent = `${mins}m`;
+
+      // Update category pill count badges
+      const allCount = AppState.history.length;
+      const algoCount = AppState.history.filter(h => h.category === 'Algorithms').length;
+      const distCount = AppState.history.filter(h => h.category === 'Distributed Systems').length;
+      const runCount = AppState.history.filter(h => h.category === 'Runtimes').length;
+      const starCount = AppState.history.filter(h => h.starred).length;
+
+      document.getElementById('countCatAll').textContent = allCount;
+      document.getElementById('countCatAlgo').textContent = algoCount;
+      document.getElementById('countCatDist').textContent = distCount;
+      document.getElementById('countCatRun').textContent = runCount;
+      document.getElementById('countCatStar').textContent = starCount;
+
+      const navLib = document.getElementById('navLibCount');
+      if (navLib) navLib.textContent = allCount;
+    }
+
+    let activeCategoryFilter = 'all';
+    function setCategoryFilter(cat, btn) {
+      activeCategoryFilter = cat;
+      const pills = document.querySelectorAll('.cat-pill');
+      pills.forEach(p => p.classList.remove('active'));
+      if (btn) {
+        btn.classList.add('active');
+      } else {
+        // Find matching pill
+        if (cat === 'all') document.getElementById('pillCatAll')?.classList.add('active');
+        else if (cat === 'Algorithms') document.getElementById('pillCatAlgo')?.classList.add('active');
+        else if (cat === 'Distributed Systems') document.getElementById('pillCatDist')?.classList.add('active');
+        else if (cat === 'Runtimes') document.getElementById('pillCatRun')?.classList.add('active');
+        else if (cat === 'starred') document.getElementById('pillCatStar')?.classList.add('active');
+      }
+      filterHistoryCards();
+    }
+
+    function filterHistoryCards() {
+      const q = (document.getElementById('historySearchInput').value || '').toLowerCase().trim();
+      renderHistoryCards(q, activeCategoryFilter);
+    }
+
+    function formatRelativeTime(isoString) {
+      if (!isoString) return '';
+      const date = new Date(isoString);
+      const now = new Date();
+      const diffSec = Math.floor((now - date) / 1000);
+      if (diffSec < 60) return 'Just now';
+      const diffMin = Math.floor(diffSec / 60);
+      if (diffMin < 60) return `${diffMin}m ago`;
+      const diffHour = Math.floor(diffMin / 60);
+      if (diffHour < 24) return `${diffHour}h ago`;
+      const diffDay = Math.floor(diffHour / 24);
+      if (diffDay === 1) return 'Yesterday';
+      if (diffDay < 7) return `${diffDay}d ago`;
+      return date.toLocaleDateString();
+    }
+
+    // Safe History Cards Renderer (Strict Zero innerHTML)
+    function renderHistoryCards(searchQuery = '', catFilter = 'all') {
+      const grid = document.getElementById('historyCardsGrid');
+      grid.replaceChildren();
+
+      const filtered = AppState.history.filter(item => {
+        if (catFilter === 'starred' && !item.starred) return false;
+        if (catFilter !== 'all' && catFilter !== 'starred' && item.category !== catFilter) return false;
+        if (searchQuery) {
+          const matchTitle = (item.title || '').toLowerCase().includes(searchQuery);
+          const matchSnippet = (item.snippet || '').toLowerCase().includes(searchQuery);
+          const matchMental = (item.mentalModel || '').toLowerCase().includes(searchQuery);
+          const matchExp = (item.explanation || '').toLowerCase().includes(searchQuery);
+          return matchTitle || matchSnippet || matchMental || matchExp;
+        }
+        return true;
+      });
+
+      const summary = document.getElementById('historyCountSummary');
+      summary.textContent = `Showing ${filtered.length} of ${AppState.history.length} acoustic sessions.`;
+
+      if (filtered.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.gridColumn = '1 / -1';
+        empty.style.textAlign = 'center';
+        empty.style.padding = '36px';
+        empty.style.color = 'var(--text-dim)';
+        empty.textContent = 'No previous explanations found matching your filter criteria.';
+        grid.appendChild(empty);
+        return;
+      }
+
+      filtered.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'history-card';
+
+        // Meta header
+        const meta = document.createElement('div');
+        meta.className = 'card-meta-bar';
+
+        const tag = document.createElement('span');
+        tag.className = 'card-tag';
+        tag.textContent = item.category || 'Architecture';
+        tag.title = `Filter by ${item.category}`;
+        tag.onclick = (e) => {
+          e.stopPropagation();
+          setCategoryFilter(item.category);
+        };
+
+        const metaRight = document.createElement('div');
+        metaRight.style.display = 'flex';
+        metaRight.style.alignItems = 'center';
+        metaRight.style.gap = '8px';
+
+        const words = (item.snippet || '').trim().split(/\s+/).filter(Boolean).length;
+        const sents = item.sentences?.length || 1;
+        const lengthChip = document.createElement('span');
+        lengthChip.className = 'card-provider-pill';
+        lengthChip.textContent = `${words}w • ${sents}s`;
+        lengthChip.title = `${words} words in snippet, ${sents} acoustic sentences`;
+
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'card-provider-pill';
+        timeSpan.textContent = formatRelativeTime(item.timestamp);
+        timeSpan.title = item.timestamp ? new Date(item.timestamp).toLocaleString() : '';
+
+        const prov = document.createElement('span');
+        prov.className = 'card-provider-pill';
+        prov.textContent = item.provider || 'hybrid';
+
+        metaRight.appendChild(lengthChip);
+        metaRight.appendChild(timeSpan);
+        metaRight.appendChild(prov);
+
+        meta.appendChild(tag);
+        meta.appendChild(metaRight);
+
+        // Title
+        const title = document.createElement('div');
+        title.className = 'card-item-title';
+        title.textContent = item.title || 'Technical Concept';
+
+        // Code snippet preview
+        const snip = document.createElement('div');
+        snip.className = 'card-snippet-preview';
+        snip.textContent = item.snippet;
+
+        // Mental Model Explanation
+        const mental = document.createElement('div');
+        mental.className = 'card-mental-preview';
+        mental.textContent = item.mentalModel || item.explanation;
+
+        // Footer Actions
+        const footer = document.createElement('div');
+        footer.className = 'card-footer-actions';
+
+        const playBtn = document.createElement('button');
+        playBtn.className = 'card-btn-play';
+        playBtn.textContent = '▶ Listen';
+        playBtn.onclick = () => loadAndPlayHistoryItem(item);
+
+        const actionsRight = document.createElement('div');
+        actionsRight.className = 'card-actions-right';
+
+        const copySnipBtn = document.createElement('button');
+        copySnipBtn.className = 'card-icon-btn';
+        copySnipBtn.textContent = '📄';
+        copySnipBtn.title = 'Copy Code Snippet';
+        copySnipBtn.onclick = () => {
+          navigator.clipboard.writeText(item.snippet);
+          showToast('Copied code snippet!', '📄');
+        };
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'card-icon-btn';
+        copyBtn.textContent = '📋';
+        copyBtn.title = 'Copy Mental Model Analogy';
+        copyBtn.onclick = () => {
+          navigator.clipboard.writeText(item.mentalModel || item.explanation);
+          showToast('Copied mental model analogy!', '📋');
+        };
+
+        const starBtn = document.createElement('button');
+        starBtn.className = 'card-icon-btn btn-star' + (item.starred ? ' starred' : '');
+        starBtn.textContent = item.starred ? '★' : '☆';
+        starBtn.title = 'Star Favorite';
+        starBtn.onclick = () => toggleStarItem(item.id);
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'card-icon-btn btn-delete';
+        delBtn.textContent = '🗑️';
+        delBtn.title = 'Delete Item';
+        delBtn.onclick = () => deleteHistoryItem(item.id);
+
+        actionsRight.appendChild(copySnipBtn);
+        actionsRight.appendChild(copyBtn);
+        actionsRight.appendChild(starBtn);
+        actionsRight.appendChild(delBtn);
+
+        footer.appendChild(playBtn);
+        footer.appendChild(actionsRight);
+
+        card.appendChild(meta);
+        card.appendChild(title);
+        card.appendChild(snip);
+        card.appendChild(mental);
+        card.appendChild(footer);
+
+        grid.appendChild(card);
+      });
+    }
+
+    function toggleStarItem(id) {
+      const item = AppState.history.find(x => x.id === id);
+      if (item) {
+        item.starred = !item.starred;
+        saveHistory();
+        updateStatsUI();
+        renderHistoryCards();
+      }
+    }
+
+    function deleteHistoryItem(id) {
+      AppState.history = AppState.history.filter(x => x.id !== id);
+      saveHistory();
+      renderHistoryCards();
+      updateStatsUI();
+      showToast('Item deleted from library.');
+    }
+
+    function clearAllHistory() {
+      if (!confirm('Clear all previous sessions from local library?')) return;
+      AppState.history = [];
+      saveHistory();
+      renderHistoryCards();
+      updateStatsUI();
+      showToast('All history cleared.');
+    }
+
+    function loadAndPlayHistoryItem(item) {
+      document.getElementById('inputTechnicalText').value = item.snippet;
+      document.getElementById('inputTopicTitle').value = item.title;
+      document.getElementById('inputCategory').value = item.category;
+      document.getElementById('selectProvider').value = item.provider || 'hybrid';
+      document.getElementById('mentalCinemaText').textContent = item.mentalModel || item.explanation;
+
+      if (item.diagram) {
+        document.getElementById('blueprintDiagramText').textContent = item.diagram;
+      }
+      if (item.gotchas) {
+        document.getElementById('blueprintGotchasText').textContent = item.gotchas;
+      }
+
+      AppState.currentSession.sentences = item.sentences && item.sentences.length > 0 
+        ? item.sentences 
+        : [{ text: item.explanation, pauseAfterMs: 0 }];
+      AppState.currentSession.currentIndex = 0;
+      AppState.currentSession.topic = item.title;
+      AppState.currentSession.mentalModel = item.mentalModel;
+
+      renderSentencesToUI();
+      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      playFromIndex(0);
+      showToast(`Playing "${item.title}"`);
+    }
+
+    // Export Formats (Markdown, JSON, Anki)
+    function exportHistory(format) {
+      if (AppState.history.length === 0) {
+        showToast('Library is empty. Nothing to export.', '⚠️');
+        return;
+      }
+
+      let content = '';
+      let filename = `docvex_library_${Date.now()}`;
+      let mimeType = 'text/plain';
+
+      if (format === 'markdown') {
+        filename += '.md';
+        mimeType = 'text/markdown';
+        content = `# DocVex Acoustic Learning Library\n\nGenerated on: ${new Date().toLocaleString()}\n\n---\n\n`;
+        AppState.history.forEach((h, i) => {
+          content += `## ${i + 1}. ${h.title}\n`;
+          content += `**Category:** ${h.category} | **Provider:** ${h.provider} | **Date:** ${new Date(h.timestamp).toLocaleDateString()}\n\n`;
+          content += `### Mental Model Analogy\n> ${h.mentalModel || h.explanation}\n\n`;
+          if (h.diagram) {
+            content += `### Mechanical Blueprint\n\`\`\`text\n${h.diagram}\n\`\`\`\n\n`;
+          }
+          if (h.gotchas) {
+            content += `### Critical Gotchas\n${h.gotchas}\n\n`;
+          }
+          content += `### Original Passage\n\`\`\`text\n${h.snippet}\n\`\`\`\n\n`;
+          content += `### Spoken Transcript\n${h.explanation}\n\n---\n\n`;
+        });
+      } else if (format === 'json') {
+        filename += '.json';
+        mimeType = 'application/json';
+        content = JSON.stringify(AppState.history, null, 2);
+      } else if (format === 'anki') {
+        filename += '_anki.txt';
+        mimeType = 'text/tab-separated-values';
+        AppState.history.forEach(h => {
+          const front = `<b>${h.title}</b><br><hr><pre>${h.snippet.replace(/\n/g, '<br>')}</pre>`;
+          const back = `<b>Mental Model:</b> ${h.mentalModel || ''}<br><br>${h.explanation.replace(/\n/g, '<br>')}`;
+          const tags = `docvex ${h.category.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          content += `${front}\t${back}\t${tags}\n`;
+        });
+      }
+
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast(`Exported ${format.toUpperCase()} library file!`, '📥');
+    }
+
+    function importHistoryFile(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const imported = JSON.parse(e.target.result);
+          if (Array.isArray(imported)) {
+            AppState.history = imported;
+            saveHistory();
+            renderHistoryCards();
+            updateStatsUI();
+            showToast('Library successfully imported!', '💾');
+          }
+        } catch {
+          showToast('Invalid JSON file format.', '❌');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // Backend Telemetry & Health Probe
+    async function checkSystemHealth() {
+      try {
+        const res = await fetch('/health');
+        if (!res.ok) throw new Error('Health probe failed');
+        const data = await res.json();
+
+        // Ollama badge
+        const ollamaText = document.getElementById('ollamaHealthText');
+        const ollamaDot = document.getElementById('ollamaHealthDot');
+        if (data.ollama && data.ollama.running) {
+          ollamaText.textContent = data.ollama.modelAvailable ? `Online (${data.ollama.model})` : 'Model Missing';
+          ollamaDot.className = data.ollama.modelAvailable ? 'tele-dot' : 'tele-dot warning';
+        } else {
+          ollamaText.textContent = 'Offline';
+          ollamaDot.className = 'tele-dot offline';
+        }
+
+        // Groq badge
+        const groqText = document.getElementById('groqHealthText');
+        const groqDot = document.getElementById('groqHealthDot');
+        if (data.groq && data.groq.configured) {
+          groqText.textContent = 'Ready';
+          groqDot.className = 'tele-dot';
+        } else {
+          groqText.textContent = 'No Key';
+          groqDot.className = 'tele-dot warning';
+        }
+      } catch {
+        document.getElementById('ollamaHealthText').textContent = 'Unreachable';
+        document.getElementById('ollamaHealthDot').className = 'tele-dot offline';
+        document.getElementById('groqHealthText').textContent = 'Unreachable';
+        document.getElementById('groqHealthDot').className = 'tele-dot offline';
+      }
+    }
+
+    // Admin Console Telemetry & Allowlist
+    async function fetchSystemStats() {
+      try {
+        const res = await fetch('/api/system/stats');
+        if (!res.ok) return;
+        const data = await res.json();
+        AppState.serverStats = data;
+
+        // Ollama
+        const oRunning = data.providers?.ollama?.running;
+        document.getElementById('adminOllamaStatus').textContent = oRunning ? 'Operational' : 'Offline';
+        document.getElementById('adminOllamaDot').className = oRunning ? 'tele-dot' : 'tele-dot offline';
+        document.getElementById('adminOllamaModel').textContent = `Model: ${data.providers?.ollama?.model || 'qwen3:4b'}`;
+        document.getElementById('adminOllamaHost').textContent = `Host: ${data.providers?.ollama?.host || 'http://127.0.0.1:11434'}`;
+
+        // Groq
+        const gConfigured = data.providers?.groq?.configured;
+        document.getElementById('adminGroqStatus').textContent = gConfigured ? 'Active' : 'Unconfigured';
+        document.getElementById('adminGroqDot').className = gConfigured ? 'tele-dot' : 'tele-dot warning';
+        document.getElementById('adminGroqModel').textContent = `Model: ${data.providers?.groq?.model || 'openai/gpt-oss-20b'}`;
+
+        // Chatterbox
+        const cEnabled = data.providers?.chatterbox?.enabled;
+        document.getElementById('adminChatterboxStatus').textContent = cEnabled ? 'Active' : 'Disabled (Default)';
+        document.getElementById('adminChatterboxDot').className = cEnabled ? 'tele-dot' : 'tele-dot warning';
+        document.getElementById('adminChatterboxDevice').textContent = `Device: ${data.providers?.chatterbox?.device || 'auto'}`;
+        document.getElementById('adminChatterboxCacheDir').textContent = `Cache: ${data.providers?.chatterbox?.tempDir || '.docvex-audio'}`;
+
+        // System
+        document.getElementById('adminMemoryMb').textContent = `${data.memoryMb || 0} MB`;
+        document.getElementById('adminUptime').textContent = `Uptime: ${data.uptimeSeconds || 0}s`;
+        document.getElementById('adminNodeVersion').textContent = `Node: ${data.nodeVersion || 'v20+'} Standard Library`;
+      } catch {}
+    }
+
+    async function fetchRetrievalDomains() {
+      try {
+        const res = await fetch('/api/retrieval/domains');
+        if (!res.ok) return;
+        const data = await res.json();
+        AppState.rawDomains = Array.isArray(data.domains) ? data.domains : [];
+        renderAllowlistDomains(AppState.rawDomains);
+      } catch {}
+    }
+
+    function filterAllowlistDomains() {
+      const q = (document.getElementById('domainSearchInput').value || '').toLowerCase().trim();
+      const filtered = AppState.rawDomains.filter(d => d.toLowerCase().includes(q));
+      renderAllowlistDomains(filtered);
+    }
+
+    function renderAllowlistDomains(domainList) {
+      const grid = document.getElementById('allowlistDomainsGrid');
+      grid.replaceChildren();
+
+      document.getElementById('domainCountBadge').textContent = `${domainList.length} Domains Verified`;
+
+      domainList.forEach(d => {
+        const chip = document.createElement('div');
+        chip.className = 'domain-chip';
+        chip.title = `Click to copy ${d}`;
+
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = d;
+
+        const lockSpan = document.createElement('span');
+        lockSpan.className = 'lock-icon';
+        lockSpan.textContent = '🔒';
+
+        chip.appendChild(nameSpan);
+        chip.appendChild(lockSpan);
+
+        chip.onclick = () => {
+          navigator.clipboard.writeText(d);
+          showToast(`Copied domain: ${d}`, '📋');
+        };
+        grid.appendChild(chip);
+      });
+    }
+
+    async function triggerCachePurge() {
+      try {
+        const res = await fetch('/api/cache/purge', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`Purged ${data.filesPurged} WAV files (${Math.round(data.bytesFreed / 1024)} KB freed).`, '🧹');
+        } else {
+          showToast('Failed to purge cache.', '❌');
+        }
+      } catch (err) {
+        showToast(`Cache purge error: ${err.message}`, '❌');
+      }
+    }
+
+    // Keyboard Shortcuts Listener
+    window.addEventListener('keydown', (e) => {
+      if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) {
+        if (e.key === 'Enter' && e.ctrlKey) {
+          triggerTeachSession();
+        }
+        return;
+      }
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        togglePlayPause();
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        nextSentence();
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        prevSentence();
+      } else if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault();
+        replayCurrentSentence();
+      } else if (e.key === 'Escape') {
+        stopActiveSpeech();
+        toggleHelpModal(false);
+      } else if (e.key === '?') {
+        toggleHelpModal(true);
+      }
+    });
+
+    // Boot Initialization
+    window.addEventListener('DOMContentLoaded', () => {
+      window.scrollTo(0, 0);
+
+      // Guard against any accidental horizontal window scroll
+      window.addEventListener('scroll', () => {
+        if (window.scrollX !== 0) {
+          window.scrollTo(0, window.scrollY);
+        }
+      }, { passive: true });
+
+      resizeCanvas();
+      drawIdleWave();
+      loadHistory();
+      loadPluginsData();
+      checkSystemHealth();
+      setInterval(checkSystemHealth, 15000);
+
+      if (window.speechSynthesis) {
+        window.speechSynthesis.onvoiceschanged = () => {
+          const v = pickBestVoice();
+          if (v) {
+            document.getElementById('voiceEngineLabel').textContent = `Voice: ${v.name}`;
+          }
+        };
+      }
+
+      if ('serviceWorker' in navigator && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      }
+
+      // Scroll spy for automatic navigation pill updates
+      const libraryAnchor = document.getElementById('historySectionVault');
+      if (libraryAnchor && 'IntersectionObserver' in window) {
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (AppState.activeTab === 'learner' && AppState.activeNavSection !== 'plugins') {
+              if (entry.isIntersecting) {
+                document.getElementById('tabLibraryBtn')?.classList.add('active');
+                document.getElementById('tabStudioBtn')?.classList.remove('active');
+              } else if (window.scrollY < (entry.boundingClientRect.top + window.scrollY - 100)) {
+                document.getElementById('tabStudioBtn')?.classList.add('active');
+                document.getElementById('tabLibraryBtn')?.classList.remove('active');
+              }
+            }
+          });
+        }, { threshold: 0.15 });
+        observer.observe(libraryAnchor);
+      }
+    });
   </script>
 </body>
 </html>
