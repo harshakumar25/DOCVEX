@@ -8,6 +8,8 @@ import {
 } from '../../extension/voiceSelector.js';
 
 test('isBannedRoboticVoice: detects and flags harsh/robotic voices', () => {
+  assert.equal(isBannedRoboticVoice('Daniel'), true, 'Daniel must be banned');
+  assert.equal(isBannedRoboticVoice('Daniel (en-GB)'), true, 'Daniel with locale must be banned');
   assert.equal(isBannedRoboticVoice('Alex'), true, 'Alex must be banned');
   assert.equal(isBannedRoboticVoice('Alex (en-US)'), true, 'Alex with locale must be banned');
   assert.equal(isBannedRoboticVoice('Fred'), true, 'Fred must be banned');
@@ -24,17 +26,21 @@ test('isBannedRoboticVoice: detects and flags harsh/robotic voices', () => {
 });
 
 test('scoreSpeechVoice: gives negative scores to robotic and compact voices', () => {
+  const danielScore = scoreSpeechVoice({ name: 'Daniel', lang: 'en-GB' });
+  assert.equal(danielScore, -1000, 'Daniel must score -1000');
+
   const alexScore = scoreSpeechVoice({ name: 'Alex', lang: 'en-US' });
   assert.equal(alexScore, -1000, 'Alex must score -1000');
 
-  const compactScore = scoreSpeechVoice({ name: 'Daniel (Compact)', lang: 'en-GB' });
+  const compactScore = scoreSpeechVoice({ name: 'Oliver (Compact)', lang: 'en-GB' });
   const enhancedScore = scoreSpeechVoice({ name: 'Oliver (Enhanced)', lang: 'en-US' });
   assert.ok(enhancedScore > compactScore, 'Enhanced voices must vastly outscore compact voices');
 });
 
-test('selectBestSpeechVoice: never selects Alex even when Alex is first in the list', () => {
+test('selectBestSpeechVoice: never selects Alex or Daniel even when first in the list', () => {
   const macVoices = [
-    { name: 'Alex', lang: 'en-US', default: true },
+    { name: 'Daniel', lang: 'en-GB', default: true },
+    { name: 'Alex', lang: 'en-US', default: false },
     { name: 'Fred', lang: 'en-US', default: false },
     { name: 'Victoria', lang: 'en-US', default: false },
     { name: 'Samantha', lang: 'en-US', default: false },
@@ -42,6 +48,7 @@ test('selectBestSpeechVoice: never selects Alex even when Alex is first in the l
 
   const selected = selectBestSpeechVoice(macVoices);
   assert.ok(selected, 'Must select a voice');
+  assert.notEqual(selected.name, 'Daniel', 'Must NEVER select Daniel');
   assert.notEqual(selected.name, 'Alex', 'Must NEVER select Alex');
   assert.notEqual(selected.name, 'Fred', 'Must NEVER select Fred');
   assert.equal(selected.name, 'Samantha', 'Must select Samantha');
@@ -50,9 +57,9 @@ test('selectBestSpeechVoice: never selects Alex even when Alex is first in the l
 test('selectBestSpeechVoice: prioritizes modern neural and enhanced voices', () => {
   const chromeVoices = [
     { name: 'Alex', lang: 'en-US' },
+    { name: 'Daniel', lang: 'en-GB' },
     { name: 'Samantha (Compact)', lang: 'en-US' },
     { name: 'Google US English', lang: 'en-US' },
-    { name: 'Daniel', lang: 'en-GB' },
   ];
 
   const selected = selectBestSpeechVoice(chromeVoices);

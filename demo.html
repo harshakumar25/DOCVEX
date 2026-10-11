@@ -3746,7 +3746,7 @@
       document.getElementById('helpModal').classList.toggle('show', Boolean(show));
     }
 
-    // Best Voice Selector (Filtered against robotic voices like Alex)
+    // Best Voice Selector (Filtered against robotic, harsh, or synthetic voices like Daniel, Alex, Fred)
     function pickBestVoice() {
       if (!window.speechSynthesis) return null;
       const voices = window.speechSynthesis.getVoices();
@@ -3754,15 +3754,26 @@
 
       const isBanned = (name) => {
         const lower = name.toLowerCase();
-        return lower.includes('alex') || lower.includes('compact') || lower.includes('whisper') || lower.includes('bad');
+        return lower.includes('daniel') ||
+               lower.includes('alex') ||
+               lower.includes('compact') ||
+               lower.includes('whisper') ||
+               lower.includes('bad') ||
+               lower.includes('fred') ||
+               lower.includes('albert') ||
+               lower.includes('zarvox') ||
+               lower.includes('ralph') ||
+               lower.includes('junior') ||
+               lower.includes('eddy') ||
+               lower.includes('rocko');
       };
 
-      const preferred = ['Daniel', 'Samantha', 'Google US English', 'Karen', 'Serena', 'Arthur', 'Victoria', 'Fiona'];
+      const preferred = ['Google US English', 'Samantha', 'Ava', 'Serena', 'Karen', 'Victoria', 'Oliver', 'Arthur', 'Fiona', 'Natural', 'Neural'];
       for (const p of preferred) {
         const found = voices.find(v => v.name.includes(p) && !isBanned(v.name));
         if (found) return found;
       }
-      return voices.find(v => !isBanned(v.name) && v.lang.startsWith('en')) || voices[0];
+      return voices.find(v => !isBanned(v.name) && v.lang.startsWith('en')) || voices.find(v => !isBanned(v.name)) || null;
     }
 
     // Chromium SpeechSynthesis Keep-Alive Heartbeat

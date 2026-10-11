@@ -1294,12 +1294,12 @@
     sourcesDiv.style.display = 'block';
   }
 
-  // Filter out harsh, robotic novelty voices and female voices to ensure a male technical narrator voice
+  // Filter out harsh, robotic novelty voices and synthetic irritants (Daniel, Alex, Fred, etc.)
   const NOVELTY_OR_ROBOTIC_VOICE_NAMES = new Set([
-    'albert', 'bad news', 'bahh', 'bells', 'boing', 'bubbles',
+    'daniel', 'alex', 'albert', 'bad news', 'bahh', 'bells', 'boing', 'bubbles',
     'cellos', 'deranged', 'good news', 'hysterical', 'jester',
     'organ', 'superstar', 'trinoids', 'whisper', 'wobble', 'zarvox', 'junior', 'ralph',
-    'fred', 'grandpa'
+    'fred', 'grandpa', 'eddy', 'reed', 'rocko'
   ]);
 
   const FEMALE_VOICE_NAMES = new Set([
@@ -1312,7 +1312,7 @@
   ]);
 
   const PREFERRED_MALE_VOICE_NAMES = [
-    'daniel', 'oliver', 'rishi', 'eddy', 'reed', 'rocko', 'aman', 'aaron', 'george', 'alex', 'arthur', 'tom',
+    'oliver', 'rishi', 'aman', 'aaron', 'george', 'arthur', 'tom',
     'male', 'natural', 'neural', 'premium', 'enhanced', 'google'
   ];
 
