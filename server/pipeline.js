@@ -6,12 +6,21 @@ import { retrieveVerifiedReferences } from './retrieval/referenceEngine.js';
 import { SentenceBuffer } from './prompt/sentenceBuffer.js';
 import { normalizeSpeechText } from './prompt/speechNormalization.js';
 
-const chatterboxProviders = new WeakMap();
+// One worker per distinct Chatterbox configuration. Keyed by the settings themselves, not by the options
+// object: the server builds a fresh options object per request, and keying on identity spawned a new
+// model-loading worker for every request (and left /health watching a provider that never started).
+const chatterboxProviders = new Map();
+
+const chatterboxKey = (options) => JSON.stringify([
+  options.CHATTERBOX_PYTHON, options.CHATTERBOX_WORKER, options.CHATTERBOX_MODEL, options.CHATTERBOX_DEVICE,
+  options.CHATTERBOX_TEMP_DIR, options.CHATTERBOX_VOICE_PROMPT,
+]);
 
 export const getChatterboxProvider = (options) => {
   if (options.chatterboxProvider) return options.chatterboxProvider;
   if (!options.CHATTERBOX_ENABLED) return null;
-  if (chatterboxProviders.has(options)) return chatterboxProviders.get(options);
+  const key = chatterboxKey(options);
+  if (chatterboxProviders.has(key)) return chatterboxProviders.get(key);
 
   const provider = new ChatterboxProvider({
     pythonPath: options.CHATTERBOX_PYTHON,
@@ -24,8 +33,69 @@ export const getChatterboxProvider = (options) => {
     requestTimeoutMs: options.CHATTERBOX_REQUEST_TIMEOUT_MS,
     maxQueue: options.CHATTERBOX_MAX_QUEUE,
   });
-  chatterboxProviders.set(options, provider);
+  chatterboxProviders.set(key, provider);
   return provider;
+};
+
+// Sources shown to clients; legal evidence also carries what the LawBuddy page needs to open the cited text.
+const toSource = (ref) => ({
+  title: ref.title,
+  url: ref.url,
+  domain: ref.domain,
+  ...(ref.kind ? { kind: ref.kind } : {}),
+  ...(ref.label ? { label: ref.label } : {}),
+  ...(ref.lookup ? { lookup: ref.lookup } : {}),
+  ...(ref.via ? { via: ref.via } : {}),
+  ...(ref.act ? { act: ref.act } : {}),
+  ...(ref.role ? { role: ref.role } : {}),
+});
+
+// LawBuddy's rule, enforced in code rather than asked of the model: with no official text there is
+// nothing to teach from, so no model is called. (A prompt saying "do not answer from memory" is not a
+// guarantee: models do answer anyway.)
+export const LAW_NO_TEXT_REPLY = 'LawBuddy has no official text for this question, so it will not answer it from memory. '
+  + 'Try asking about a specific Article, Schedule or section, such as Article 21 of the Constitution.';
+const lawNoTextReply = (references) => references?.analysis?.concepts?.some((concept) => concept.id === 'unauthorised-security-testing')
+  ? 'This is a cyber-law question about security testing and a case against the researcher. LawBuddy has not indexed the verified text of sections 43 and 66 of the Information Technology Act, 2000, so it cannot assess the case. Read those provisions in India Code and consult an Indian cybercrime lawyer if a complaint or FIR has been filed.'
+  : LAW_NO_TEXT_REPLY;
+const NO_MODEL = 'none: declined without official text';
+const declinesWithoutText = (options, groundingStatus) => options.mode === 'law' && groundingStatus !== 'grounded';
+
+// LawBuddy's answer check (law mode): which citations and quotations in the finished answer are tied to the
+// official text it was given. Injected by the /lawbuddy route; other modes have none.
+const checkAnswer = (options, explanation, references) => {
+  if (typeof options.checkAnswer !== 'function') return null;
+  try {
+    return options.checkAnswer(explanation, references);
+  } catch {
+    return null;
+  }
+};
+
+// LawBuddy's critique (law mode): an independent model reads each claim beside the provision it cites.
+// Injected by the /lawbuddy route; it never fails the answer.
+const critiqueAnswer = async (options, explanation, references) => {
+  if (typeof options.critiqueAnswer !== 'function') return null;
+  try {
+    return await options.critiqueAnswer(explanation, references);
+  } catch {
+    return null;
+  }
+};
+
+// What LawBuddy made of the question (its kind and legal concepts), for the page to show.
+const describeAnalysis = (references) => (references?.analysis
+  ? {
+    kind: references.analysis.kind,
+    concepts: references.analysis.concepts,
+    ...(references.analysis.warnings?.length ? { warnings: references.analysis.warnings } : {}),
+  }
+  : null);
+
+/** The fixed reply, delivered word by word like a model stream so clients and voice work unchanged. */
+const replyWithoutModel = (reply, onToken) => {
+  for (const piece of reply.match(/\S+\s*/g)) onToken?.(piece);
+  return { explanation: reply, provider: 'lawbuddy', model: NO_MODEL };
 };
 
 const isMeaningfulTeachingSentence = (sentence) => {
@@ -63,7 +133,8 @@ export const teachPipeline = async (
     references = [];
   }
 
-  const isFollowUp = Boolean(options.isFollowUp || false);
+  // LawBuddy (mode 'law') grounds follow-ups like fresh questions instead of answering from context.
+  const isFollowUp = Boolean(options.isFollowUp || false) && options.mode !== 'law';
 
   // Follow-up: use warm context-aware prompt instead of cold teaching prompt
   let userPrompt, groundingStatus, sourceDomains, sources;
@@ -82,18 +153,30 @@ export const teachPipeline = async (
       pageTitle: title,
       pageUrl: url,
       evidence: references,
+      mode: options.mode,
+      analysis: references.analysis ?? null,
     });
     userPrompt = result.userPrompt;
     groundingStatus = result.groundingStatus;
     sourceDomains = result.sourceDomains;
-    sources = references.map((ref) => ({
-      title: ref.title,
-      url: ref.url,
-      domain: ref.domain,
-    }));
+    sources = references.map(toSource);
   }
 
-  const activeSystemPrompt = isFollowUp ? DOCY_FOLLOWUP_SYSTEM_PROMPT : TEACHER_SYSTEM_PROMPT;
+  // A route may bring its own system prompt (LawBuddy's law tutor); DocVex's narrator is the default.
+  const activeSystemPrompt = isFollowUp ? DOCY_FOLLOWUP_SYSTEM_PROMPT : (options.systemPrompt || TEACHER_SYSTEM_PROMPT);
+
+  if (declinesWithoutText(options, groundingStatus)) {
+    const reply = lawNoTextReply(references);
+    return {
+      explanation: reply,
+      speechFriendly: shapeSpeechText(reply),
+      sources,
+      groundingStatus,
+      sourceDomains,
+      provider: 'lawbuddy',
+      model: NO_MODEL,
+    };
+  }
   const chosenProvider = provider || options.DEFAULT_PROVIDER || 'ollama';
 
   // Hybrid Mode: Groq provides rapid explanation, Ollama provides background deep reasoning
@@ -135,6 +218,8 @@ export const teachPipeline = async (
       sources,
       groundingStatus,
       sourceDomains,
+      analysis: describeAnalysis(references),
+      check: checkAnswer(options, groqResult.explanation, references),
       insights: ollamaResult?.explanation || null,
       provider: 'hybrid',
       model: `${groqResult.model} + ${ollamaResult?.model || 'ollama'}`,
@@ -159,6 +244,9 @@ export const teachPipeline = async (
     sources,
     groundingStatus,
     sourceDomains,
+    analysis: describeAnalysis(references),
+    check: checkAnswer(options, modelResult.explanation, references),
+    critique: await critiqueAnswer(options, modelResult.explanation, references),
     provider: modelResult.provider,
     model: modelResult.model,
   };
@@ -190,7 +278,8 @@ export const streamTeachPipeline = async (
     references = [];
   }
 
-  const isFollowUp = Boolean(options.isFollowUp || false);
+  // LawBuddy (mode 'law') grounds follow-ups like fresh questions instead of answering from context.
+  const isFollowUp = Boolean(options.isFollowUp || false) && options.mode !== 'law';
 
   let userPrompt, groundingStatus, sourceDomains, sources;
   if (isFollowUp) {
@@ -208,32 +297,36 @@ export const streamTeachPipeline = async (
       pageTitle: title,
       pageUrl: url,
       evidence: references,
+      mode: options.mode,
+      analysis: references.analysis ?? null,
     });
     userPrompt = result.userPrompt;
     groundingStatus = result.groundingStatus;
     sourceDomains = result.sourceDomains;
-    sources = references.map((ref) => ({
-      title: ref.title,
-      url: ref.url,
-      domain: ref.domain,
-    }));
+    sources = references.map(toSource);
   }
 
-  const activeSystemPrompt = isFollowUp ? DOCY_FOLLOWUP_SYSTEM_PROMPT : TEACHER_SYSTEM_PROMPT;
+  // A route may bring its own system prompt (LawBuddy's law tutor); DocVex's narrator is the default.
+  const activeSystemPrompt = isFollowUp ? DOCY_FOLLOWUP_SYSTEM_PROMPT : (options.systemPrompt || TEACHER_SYSTEM_PROMPT);
+  const declineWithoutText = declinesWithoutText(options, groundingStatus);
 
   const chosenProvider = provider || options.DEFAULT_PROVIDER || 'ollama';
   const isHybrid = chosenProvider === 'hybrid';
   const voiceProvider = isHybrid ? 'groq' : chosenProvider;
   const chatterbox = getChatterboxProvider(options);
   const audioPromises = [];
+  const loggedAudioErrorCodes = new Set();
 
   if (chatterbox) {
     chatterbox.start().catch(() => {});
   }
 
-  const modelName = isHybrid
-    ? `${options.GROQ_MODEL || 'openai/gpt-oss-20b'} + ${options.OLLAMA_MODEL || 'qwen3:4b'}`
-    : (chosenProvider === 'groq' ? (options.GROQ_MODEL || 'openai/gpt-oss-20b') : (options.OLLAMA_MODEL || 'qwen3:4b'));
+  const reportedProvider = declineWithoutText ? 'lawbuddy' : chosenProvider;
+  const modelName = declineWithoutText
+    ? NO_MODEL
+    : isHybrid
+      ? `${options.GROQ_MODEL || 'openai/gpt-oss-20b'} + ${options.OLLAMA_MODEL || 'qwen3:4b'}`
+      : (chosenProvider === 'groq' ? (options.GROQ_MODEL || 'openai/gpt-oss-20b') : (options.OLLAMA_MODEL || 'qwen3:4b'));
 
   if (typeof onMetadata === 'function') {
     onMetadata({
@@ -241,9 +334,10 @@ export const streamTeachPipeline = async (
       sources,
       groundingStatus,
       sourceDomains,
-      provider: chosenProvider,
+      analysis: describeAnalysis(references),
+      provider: reportedProvider,
       model: modelName,
-      isHybrid,
+      isHybrid: isHybrid && !declineWithoutText,
       chatterbox: chatterbox
         ? { enabled: true, model: options.CHATTERBOX_MODEL, nativeIncrementalGeneration: false }
         : { enabled: false },
@@ -279,7 +373,11 @@ export const streamTeachPipeline = async (
               if (signal?.aborted || error.code === 'CHATTERBOX_CANCELLED' || error.name === 'AbortError') {
                 return null;
               }
-              console.error('[DocVex Pipeline Audio Error]', error);
+              // One log line per error kind per request, not one stack trace per sentence.
+              if (!loggedAudioErrorCodes.has(error.code)) {
+                loggedAudioErrorCodes.add(error.code);
+                console.error(`[DocVex Pipeline Audio Error] ${error.code || 'AUDIO_ERROR'}: ${error.message}`);
+              }
               if (typeof onAudioError === 'function') {
                 onAudioError({
                   requestId,
@@ -302,7 +400,7 @@ export const streamTeachPipeline = async (
   const isSubstantialTechnicalText =
     (text || '').trim().length >= 25 &&
     !/^(hi+|hello+|hey+|yo+|what'?s\s*up|greetings|hola)\b/i.test((text || '').trim());
-  if (isHybrid && isSubstantialTechnicalText && !isFollowUp) {
+  if (isHybrid && isSubstantialTechnicalText && !isFollowUp && !declineWithoutText) {
 
     const reasoningPrompt = buildReasoningPrompt({
       selectedText: text,
@@ -327,18 +425,21 @@ export const streamTeachPipeline = async (
     // Stream voice generation tokens from voice provider (Groq in hybrid mode)
     let modelResult;
     let usedVoiceProvider = voiceProvider;
+    const forward = (token) => {
+      onToken?.(token);
+      sentenceBuffer?.addToken(token);
+    };
     try {
-      modelResult = await streamExplanation({
-        prompt: userPrompt,
-        systemPrompt: activeSystemPrompt,
-        provider: voiceProvider,
-        options,
-        signal,
-        onToken: (token) => {
-          onToken?.(token);
-          sentenceBuffer?.addToken(token);
-        },
-      });
+      modelResult = declineWithoutText
+        ? replyWithoutModel(lawNoTextReply(references), forward)
+        : await streamExplanation({
+          prompt: userPrompt,
+          systemPrompt: activeSystemPrompt,
+          provider: voiceProvider,
+          options,
+          signal,
+          onToken: forward,
+        });
     } catch (voiceErr) {
       // Groq is overloaded or unavailable — fall back to Ollama for the voice stream
       if (isHybrid && (voiceErr.statusCode === 503 || voiceErr.statusCode === 502 || voiceErr.statusCode === 504)) {
@@ -352,10 +453,7 @@ export const streamTeachPipeline = async (
           provider: 'ollama',
           options,
           signal,
-          onToken: (token) => {
-            onToken?.(token);
-            sentenceBuffer?.addToken(token);
-          },
+          onToken: forward,
         });
       } else {
         throw voiceErr;
@@ -380,6 +478,9 @@ export const streamTeachPipeline = async (
       await Promise.allSettled(audioPromises);
     }
 
+    const check = checkAnswer(options, modelResult.explanation, references);
+    // The answer has streamed (and is being spoken); the critique follows before "done".
+    const critique = await critiqueAnswer(options, modelResult.explanation, references);
     // Fire onDone immediately after voice provider — do NOT await Ollama here.
     if (typeof onDone === 'function') {
       onDone({
@@ -389,7 +490,9 @@ export const streamTeachPipeline = async (
         sources,
         groundingStatus,
         sourceDomains,
-        provider: chosenProvider,
+        check,
+        critique,
+        provider: reportedProvider,
         model: usedVoiceProvider !== voiceProvider
           ? `${usedVoiceProvider} (groq-fallback)`
           : modelName,
@@ -416,6 +519,8 @@ export const streamTeachPipeline = async (
       sources,
       groundingStatus,
       sourceDomains,
+      check,
+      critique,
       provider: chosenProvider,
       model: modelName,
     };

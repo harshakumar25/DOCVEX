@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import {
   isBannedRoboticVoice,
   scoreSpeechVoice,
@@ -84,4 +86,29 @@ test('selectBestSpeechVoice: returns null or non-banned voice if only banned voi
 
   const selected = selectBestSpeechVoice(bannedOnly);
   assert.equal(selected, null, 'Must return null rather than speaking with a banned robotic voice');
+});
+
+test('LawBuddy teach page reads answers only with an allowed voice, never the browser default', async () => {
+  const teachCandidates = [
+    new URL('../../node_modules/@docvex/lawbuddy/web/teach.js', import.meta.url),
+    new URL('../../../lawbuddy/web/teach.js', import.meta.url),
+    new URL('../../web/lawbuddy/teach.js', import.meta.url),
+  ];
+  const teachUrl = teachCandidates.find((u) => existsSync(u));
+  assert.ok(teachUrl, 'LawBuddy teach.js must exist');
+  const teach = await readFile(teachUrl, 'utf8');
+  assert.match(teach, /import \{ selectBestSpeechVoice \} from '\.\/voiceSelector\.js'/);
+  assert.match(teach, /utterance\.voice = chosen/, 'the chosen voice must be set explicitly');
+  assert.match(teach, /if \(!chosen\) \{\s*resolve\(\);\s*return;/, 'with no allowed voice it stays silent');
+
+  // The voices macOS offers for English, with Daniel listed first as the system default
+  const macVoices = [
+    { name: 'Daniel', lang: 'en-GB', default: true },
+    { name: 'Rishi', lang: 'en-IN' },
+    { name: 'Aman', lang: 'en-IN' },
+    { name: 'Eddy (English (UK))', lang: 'en-GB' },
+    { name: 'Samantha', lang: 'en-US' },
+  ];
+  assert.equal(selectBestSpeechVoice(macVoices).name, 'Samantha');
+  assert.equal(selectBestSpeechVoice([{ name: 'Daniel', lang: 'en-GB', default: true }]), null);
 });

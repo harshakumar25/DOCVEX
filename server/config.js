@@ -1,10 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { fileURLToPath } from 'node:url';
+
 // Attempt to load .env file natively if it exists
 try {
-  const envPath = path.resolve(process.cwd(), '.env');
-  if (fs.existsSync(envPath)) {
+  const localEnv = path.resolve(process.cwd(), '.env');
+  const rootEnv = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../.env');
+  const envPath = fs.existsSync(localEnv) ? localEnv : (fs.existsSync(rootEnv) ? rootEnv : null);
+  if (envPath) {
     process.loadEnvFile(envPath);
   }
 } catch {
@@ -60,6 +64,15 @@ export const config = Object.freeze({
   CHATTERBOX_STARTUP_TIMEOUT_MS: parsePositiveInteger(process.env.CHATTERBOX_STARTUP_TIMEOUT_MS, 120000),
   CHATTERBOX_REQUEST_TIMEOUT_MS: parsePositiveInteger(process.env.CHATTERBOX_REQUEST_TIMEOUT_MS, 120000),
   CHATTERBOX_MAX_QUEUE: parsePositiveInteger(process.env.CHATTERBOX_MAX_QUEUE, 30),
+  LEGAL_DB_PATH: process.env.LEGAL_DB_PATH || path.resolve(process.cwd(), '.lawbuddy/lawbuddy.db'),
+  LEGAL_RAW_DIR: process.env.LEGAL_RAW_DIR || path.resolve(process.cwd(), '.lawbuddy/raw'),
+  LEGAL_USER_AGENT: (process.env.LEGAL_USER_AGENT || 'LawBuddyBot/0.1 (+educational legal research)').trim(),
+  LEGAL_FETCH_MIN_INTERVAL_MS: parsePositiveInteger(process.env.LEGAL_FETCH_MIN_INTERVAL_MS, 3000),
+  LEGAL_FETCH_TIMEOUT_MS: parsePositiveInteger(process.env.LEGAL_FETCH_TIMEOUT_MS, 30000),
+  LEGAL_FETCH_MAX_BYTES: parsePositiveInteger(process.env.LEGAL_FETCH_MAX_BYTES, 50 * 1024 * 1024),
+  LEGAL_PYTHON: process.env.LEGAL_PYTHON || path.resolve(process.cwd(), 'workers/.venv/bin/python'),
+  LEGAL_PDF_WORKER: process.env.LEGAL_PDF_WORKER || path.resolve(process.cwd(), 'workers/pdf_extract.py'),
+  LEGAL_PDF_TIMEOUT_MS: parsePositiveInteger(process.env.LEGAL_PDF_TIMEOUT_MS, 300000),
 });
 
 export const helpers = {
