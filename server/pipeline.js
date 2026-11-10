@@ -11,28 +11,13 @@ import { normalizeSpeechText } from './prompt/speechNormalization.js';
 // model-loading worker for every request (and left /health watching a provider that never started).
 const chatterboxProviders = new Map();
 
-const chatterboxKey = (options) => JSON.stringify([
-  options.CHATTERBOX_PYTHON, options.CHATTERBOX_WORKER, options.CHATTERBOX_MODEL, options.CHATTERBOX_DEVICE,
-  options.CHATTERBOX_TEMP_DIR, options.CHATTERBOX_VOICE_PROMPT,
-]);
-
 export const getChatterboxProvider = (options) => {
   if (options.chatterboxProvider) return options.chatterboxProvider;
   if (!options.CHATTERBOX_ENABLED) return null;
-  const key = chatterboxKey(options);
+  const key = ChatterboxProvider.cacheKey(options);
   if (chatterboxProviders.has(key)) return chatterboxProviders.get(key);
 
-  const provider = new ChatterboxProvider({
-    pythonPath: options.CHATTERBOX_PYTHON,
-    workerPath: options.CHATTERBOX_WORKER,
-    model: options.CHATTERBOX_MODEL,
-    device: options.CHATTERBOX_DEVICE,
-    tempDir: options.CHATTERBOX_TEMP_DIR,
-    voicePrompt: options.CHATTERBOX_VOICE_PROMPT,
-    startupTimeoutMs: options.CHATTERBOX_STARTUP_TIMEOUT_MS,
-    requestTimeoutMs: options.CHATTERBOX_REQUEST_TIMEOUT_MS,
-    maxQueue: options.CHATTERBOX_MAX_QUEUE,
-  });
+  const provider = ChatterboxProvider.fromConfig(options);
   chatterboxProviders.set(key, provider);
   return provider;
 };
@@ -55,9 +40,17 @@ const toSource = (ref) => ({
 // guarantee: models do answer anyway.)
 export const LAW_NO_TEXT_REPLY = 'LawBuddy has no official text for this question, so it will not answer it from memory. '
   + 'Try asking about a specific Article, Schedule or section, such as Article 21 of the Constitution.';
-const lawNoTextReply = (references) => references?.analysis?.concepts?.some((concept) => concept.id === 'unauthorised-security-testing')
-  ? 'This is a cyber-law question about security testing and a case against the researcher. LawBuddy has not indexed the verified text of sections 43 and 66 of the Information Technology Act, 2000, so it cannot assess the case. Read those provisions in India Code and consult an Indian cybercrime lawyer if a complaint or FIR has been filed.'
-  : LAW_NO_TEXT_REPLY;
+const lawNoTextReply = (references) => {
+  if (!references?.analysis?.concepts?.some((concept) => concept.id === 'unauthorised-security-testing')) return LAW_NO_TEXT_REPLY;
+  const missing = references.analysis.coverage?.missing?.filter((item) => item.act === 'IT2000') || [
+    { label: 's.43' }, { label: 's.66' },
+  ];
+  const sections = missing.length === 1 ? `section ${missing[0].label.slice(2)}` : `sections ${missing.map((item) => item.label.slice(2)).join(' and ')}`;
+  const coverage = missing.map((item) => item.reviewedThrough
+    ? `section ${item.label.slice(2)} was reviewed only through ${item.reviewedThrough}`
+    : `section ${item.label.slice(2)} has no indexed verified text`).join('; ');
+  return `This is a cyber-law question about security testing and a case against the researcher. LawBuddy needs ${sections} of the Information Technology Act, 2000 for this question, but ${coverage}. It cannot assess the case for the requested date. Read the relevant provisions in India Code and consult an Indian cybercrime lawyer if a complaint or FIR has been filed.`;
+};
 const NO_MODEL = 'none: declined without official text';
 const declinesWithoutText = (options, groundingStatus) => options.mode === 'law' && groundingStatus !== 'grounded';
 
@@ -89,6 +82,7 @@ const describeAnalysis = (references) => (references?.analysis
     kind: references.analysis.kind,
     concepts: references.analysis.concepts,
     ...(references.analysis.warnings?.length ? { warnings: references.analysis.warnings } : {}),
+    ...(references.analysis.coverage ? { coverage: references.analysis.coverage } : {}),
   }
   : null);
 

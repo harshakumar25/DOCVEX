@@ -21,6 +21,37 @@ import {
 } from '@docvex/lawbuddy';
 
 
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+const STATIC_TEXT_ASSETS = Object.freeze({
+  '/demo': { file: 'demo.html', type: 'text/html; charset=utf-8', missing: 'Dashboard page not found.' },
+  '/demo.html': { file: 'demo.html', type: 'text/html; charset=utf-8', missing: 'Dashboard page not found.' },
+  '/': { file: 'demo.html', type: 'text/html; charset=utf-8', missing: 'Dashboard page not found.' },
+  '/dashboard': { file: 'demo.html', type: 'text/html; charset=utf-8', missing: 'Dashboard page not found.' },
+  '/manifest.webmanifest': { file: 'manifest.webmanifest', type: 'application/manifest+json; charset=utf-8', missing: 'Manifest not found.' },
+  '/sw.js': { file: 'sw.js', type: 'application/javascript; charset=utf-8', missing: 'Service worker not found.' },
+  '/assets/voiceSelector.js': { file: 'extension/voiceSelector.js', type: 'application/javascript; charset=utf-8', missing: 'Voice selector asset not found.' },
+  '/assets/speechCore.js': { file: 'extension/speechCore.js', type: 'application/javascript; charset=utf-8', missing: 'Speech core asset not found.' },
+});
+
+const serveStaticTextAsset = (req, res, pathname) => {
+  const asset = STATIC_TEXT_ASSETS[pathname];
+  if (!asset || (req.method !== 'GET' && req.method !== 'HEAD')) return false;
+  try {
+    const content = readFileSync(path.join(REPO_ROOT, asset.file), 'utf8');
+    res.writeHead(200, { 'Content-Type': asset.type });
+    if (req.method === 'HEAD') {
+      res.end();
+      return true;
+    }
+    res.end(content);
+    return true;
+  } catch {
+    sendJson(res, 404, { error: asset.missing }, req);
+    return true;
+  }
+};
+
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1', '0.0.0.0']);
 
 // Origin security: Only allow requests from chrome-extension:// origins, local dashboard origins (localhost / 127.0.0.1 / ::1), or non-browser clients (service worker, curl)
@@ -301,6 +332,8 @@ export const createServer = (options = {}) => {
             device: serverConfig.CHATTERBOX_DEVICE,
             ready: Boolean(chatterbox?.isReady?.()),
             tempDir: serverConfig.CHATTERBOX_TEMP_DIR,
+            sampleRate: serverConfig.CHATTERBOX_TARGET_SR,
+            cfmSteps: serverConfig.CHATTERBOX_CFM_STEPS,
           },
         },
       }, req);
@@ -392,55 +425,8 @@ export const createServer = (options = {}) => {
       return sendJson(res, 200, { success: true, plugin: updated }, req);
     }
 
-    // Interactive Dashboard & Test Bench Endpoint
-    if ((req.method === 'GET' || req.method === 'HEAD') && (pathname === '/demo' || pathname === '/demo.html' || pathname === '/' || pathname === '/dashboard')) {
-      try {
-        const demoPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../demo.html');
-        const html = readFileSync(demoPath, 'utf8');
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        if (req.method === 'HEAD') {
-          res.end();
-          return;
-        }
-        res.end(html);
-        return;
-      } catch {
-        return sendJson(res, 404, { error: 'Dashboard page not found.' }, req);
-      }
-    }
-
-    // PWA Manifest Endpoint
-    if ((req.method === 'GET' || req.method === 'HEAD') && pathname === '/manifest.webmanifest') {
-      try {
-        const manifestPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../manifest.webmanifest');
-        const manifest = readFileSync(manifestPath, 'utf8');
-        res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8' });
-        if (req.method === 'HEAD') {
-          res.end();
-          return;
-        }
-        res.end(manifest);
-        return;
-      } catch {
-        return sendJson(res, 404, { error: 'Manifest not found.' }, req);
-      }
-    }
-
-    // PWA Service Worker Endpoint
-    if ((req.method === 'GET' || req.method === 'HEAD') && pathname === '/sw.js') {
-      try {
-        const swPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../sw.js');
-        const swCode = readFileSync(swPath, 'utf8');
-        res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8' });
-        if (req.method === 'HEAD') {
-          res.end();
-          return;
-        }
-        res.end(swCode);
-        return;
-      } catch {
-        return sendJson(res, 404, { error: 'Service worker not found.' }, req);
-      }
+    if (serveStaticTextAsset(req, res, pathname)) {
+      return;
     }
 
     // Teach Endpoint
@@ -456,15 +442,16 @@ export const createServer = (options = {}) => {
       legalLibrary,
       sendJson,
       libraryMissingMessage: LIBRARY_MISSING,
+      reportOptions: serverConfig,
     })) {
       return;
     }
 
-    if (req.method === 'POST' && (pathname === '/teach' || pathname === '/lawbuddy/teach')) {
-      // Same request/stream contract on both routes; POST /lawbuddy/teach teaches only from the legal library.
+    if (req.method === 'POST' && (pathname === '/teach' || pathname === '/lawbuddy/teach' || pathname === '/advocatevox/teach')) {
+      // Same request/stream contract on both routes; POST /lawbuddy/teach or /advocatevox/teach teaches only from the legal library.
       // LawBuddy answers fit Groq's free tier (8,000 tokens per minute): a short system prompt, a set answer
       // allowance and low reasoning effort.
-      const routeOptions = pathname === '/lawbuddy/teach'
+      const routeOptions = (pathname === '/lawbuddy/teach' || pathname === '/advocatevox/teach')
         ? {
           mode: 'law',
           retrieveVerifiedReferences: lawRetriever,

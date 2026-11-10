@@ -77,6 +77,19 @@ test('missing cyber-law text yields a cyber-specific decline without calling a m
   assert.doesNotMatch(done.explanation, /Article 21|Kubernetes/);
 });
 
+test('cyber decline names only the provision still missing after a partial import', async () => {
+  const references = [];
+  Object.defineProperty(references, 'analysis', {
+    value: {
+      concepts: [{ id: 'unauthorised-security-testing' }],
+      coverage: { status: 'unavailable', missing: [{ act: 'IT2000', label: 's.66' }] },
+    },
+  });
+  const { done } = await run({ references, fetchFn: async () => assert.fail('no model call') });
+  assert.match(done.explanation, /needs section 66 of the Information Technology Act/);
+  assert.doesNotMatch(done.explanation, /sections 43 and 66/);
+});
+
 test('LawBuddy with official text still teaches through the model; plain DocVex is unchanged', async () => {
   const grounded = await run({
     references: [ARTICLE_21],

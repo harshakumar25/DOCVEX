@@ -19,7 +19,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["offscreen.html", "offscreen.js"],
+      "resources": ["offscreen.html", "offscreen.js", "speechCore.js", "voiceSelector.js"],
       "matches": ["<all_urls>"]
     }
   ],

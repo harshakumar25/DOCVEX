@@ -121,3 +121,32 @@ test('getChatterboxProvider shares one worker per configuration across per-reque
   const injected = {};
   assert.equal(getChatterboxProvider({ ...settings, chatterboxProvider: injected }), injected);
 });
+
+test('ChatterboxProvider.fromConfig derives worker CLI args and cache keys from CHATTERBOX_OPTION_SPEC', () => {
+  const settings = {
+    CHATTERBOX_ENABLED: true,
+    CHATTERBOX_PYTHON: '/fake/python',
+    CHATTERBOX_WORKER: '/fake/docvex_worker.py',
+    CHATTERBOX_MODEL: 'nano',
+    CHATTERBOX_DEVICE: 'mps',
+    CHATTERBOX_TEMP_DIR: '/tmp/docvex-audio-spec-test',
+    CHATTERBOX_CFM_STEPS: 8,
+    CHATTERBOX_TEMPERATURE: 0.65,
+    CHATTERBOX_TOP_K: 500,
+    CHATTERBOX_TOP_P: 0.90,
+    CHATTERBOX_REP_PENALTY: 1.3,
+    CHATTERBOX_TARGET_SR: 24000,
+    CHATTERBOX_TARGET_LUFS: -19,
+  };
+  const provider = ChatterboxProvider.fromConfig(settings);
+  const args = provider.buildWorkerArgs();
+  assert.ok(args.includes('--cfm-steps') && args[args.indexOf('--cfm-steps') + 1] === '8');
+  assert.ok(args.includes('--target-sr') && args[args.indexOf('--target-sr') + 1] === '24000');
+  assert.ok(args.includes('--target-lufs') && args[args.indexOf('--target-lufs') + 1] === '-19');
+  assert.ok(!args.includes('--voice-prompt'), 'empty optional voicePrompt must be omitted');
+
+  assert.notEqual(
+    ChatterboxProvider.cacheKey(settings),
+    ChatterboxProvider.cacheKey({ ...settings, CHATTERBOX_TARGET_SR: 44100 }),
+  );
+});

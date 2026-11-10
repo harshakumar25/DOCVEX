@@ -7,6 +7,21 @@ const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 
 const STDERR_TAIL_LINES = 20;
 
+// Single-source-of-truth mapping between server config keys, provider fields, and worker CLI flags.
+export const CHATTERBOX_OPTION_SPEC = Object.freeze([
+  { configKey: 'CHATTERBOX_MODEL', prop: 'model', flag: '--model', defaultValue: '' },
+  { configKey: 'CHATTERBOX_DEVICE', prop: 'device', flag: '--device', defaultValue: 'auto' },
+  { configKey: 'CHATTERBOX_TEMP_DIR', prop: 'tempDir', flag: '--temp-dir', defaultValue: '' },
+  { configKey: 'CHATTERBOX_VOICE_PROMPT', prop: 'voicePrompt', flag: '--voice-prompt', defaultValue: '', optional: true },
+  { configKey: 'CHATTERBOX_CFM_STEPS', prop: 'cfmSteps', flag: '--cfm-steps', defaultValue: 8 },
+  { configKey: 'CHATTERBOX_TEMPERATURE', prop: 'temperature', flag: '--temperature', defaultValue: 0.65 },
+  { configKey: 'CHATTERBOX_TOP_K', prop: 'topK', flag: '--top-k', defaultValue: 500 },
+  { configKey: 'CHATTERBOX_TOP_P', prop: 'topP', flag: '--top-p', defaultValue: 0.90 },
+  { configKey: 'CHATTERBOX_REP_PENALTY', prop: 'repPenalty', flag: '--rep-penalty', defaultValue: 1.3 },
+  { configKey: 'CHATTERBOX_TARGET_SR', prop: 'targetSampleRate', flag: '--target-sr', defaultValue: 24000 },
+  { configKey: 'CHATTERBOX_TARGET_LUFS', prop: 'targetLufs', flag: '--target-lufs', defaultValue: -19.0 },
+]);
+
 const providerError = (message, statusCode = 502, code = 'CHATTERBOX_ERROR') => {
   const error = new Error(message);
   error.statusCode = statusCode;
@@ -15,6 +30,29 @@ const providerError = (message, statusCode = 502, code = 'CHATTERBOX_ERROR') => 
 };
 
 export class ChatterboxProvider {
+  static cacheKey(options = {}) {
+    return JSON.stringify([
+      options.CHATTERBOX_PYTHON,
+      options.CHATTERBOX_WORKER,
+      ...CHATTERBOX_OPTION_SPEC.map((entry) => options[entry.configKey] ?? entry.defaultValue),
+    ]);
+  }
+
+  static fromConfig(options = {}) {
+    const mapped = {};
+    for (const entry of CHATTERBOX_OPTION_SPEC) {
+      mapped[entry.prop] = options[entry.configKey] ?? entry.defaultValue;
+    }
+    return new ChatterboxProvider({
+      pythonPath: options.CHATTERBOX_PYTHON,
+      workerPath: options.CHATTERBOX_WORKER,
+      ...mapped,
+      startupTimeoutMs: options.CHATTERBOX_STARTUP_TIMEOUT_MS,
+      requestTimeoutMs: options.CHATTERBOX_REQUEST_TIMEOUT_MS,
+      maxQueue: options.CHATTERBOX_MAX_QUEUE,
+    });
+  }
+
   constructor({
     pythonPath,
     workerPath,
@@ -22,6 +60,13 @@ export class ChatterboxProvider {
     device = 'auto',
     tempDir,
     voicePrompt = '',
+    cfmSteps = 8,
+    temperature = 0.65,
+    topK = 500,
+    topP = 0.90,
+    repPenalty = 1.3,
+    targetSampleRate = 24000,
+    targetLufs = -19.0,
     startupTimeoutMs = 120000,
     requestTimeoutMs = 120000,
     maxQueue = 30,
@@ -42,6 +87,13 @@ export class ChatterboxProvider {
     this.device = device;
     this.tempDir = path.resolve(tempDir);
     this.voicePrompt = voicePrompt ? path.resolve(voicePrompt) : '';
+    this.cfmSteps = cfmSteps;
+    this.temperature = temperature;
+    this.topK = topK;
+    this.topP = topP;
+    this.repPenalty = repPenalty;
+    this.targetSampleRate = targetSampleRate;
+    this.targetLufs = targetLufs;
     this.startupTimeoutMs = startupTimeoutMs;
     this.requestTimeoutMs = requestTimeoutMs;
     this.maxQueue = maxQueue;
@@ -66,6 +118,16 @@ export class ChatterboxProvider {
     return providerError(`${message}${tail}`, statusCode, code);
   }
 
+  buildWorkerArgs() {
+    const args = [this.workerPath];
+    for (const entry of CHATTERBOX_OPTION_SPEC) {
+      const value = this[entry.prop];
+      if (entry.optional && (value === '' || value === null || value === undefined)) continue;
+      args.push(entry.flag, String(value));
+    }
+    return args;
+  }
+
   async start() {
     if (this.readyPromise) return this.readyPromise;
 
@@ -77,18 +139,7 @@ export class ChatterboxProvider {
     this.inputClosed = false;
     this.stderrTail = [];
     this.readyPromise = new Promise((resolve, reject) => {
-      const args = [
-        this.workerPath,
-        '--model',
-        this.model,
-        '--device',
-        this.device,
-        '--temp-dir',
-        this.tempDir,
-      ];
-      if (this.voicePrompt) {
-        args.push('--voice-prompt', this.voicePrompt);
-      }
+      const args = this.buildWorkerArgs();
       const child = this.spawnFn(this.pythonPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
       this.child = child;
 

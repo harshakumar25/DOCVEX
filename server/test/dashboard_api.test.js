@@ -154,6 +154,14 @@ test('GET /manifest.webmanifest and /sw.js serve PWA offline assets', async () =
     assert.ok(swRes.headers.get('content-type').includes('application/javascript'));
     const swCode = await swRes.text();
     assert.ok(swCode.includes('docvex-shell-v1'));
+
+    const voiceRes = await fetch(`${baseUrl}/assets/voiceSelector.js`);
+    assert.equal(voiceRes.status, 200);
+    assert.ok((await voiceRes.text()).includes('selectBestSpeechVoice'));
+
+    const speechCoreRes = await fetch(`${baseUrl}/assets/speechCore.js`);
+    assert.equal(speechCoreRes.status, 200);
+    assert.ok((await speechCoreRes.text()).includes('SentenceBuffer'));
   } finally {
     await close();
   }

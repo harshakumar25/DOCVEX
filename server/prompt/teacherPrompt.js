@@ -1,4 +1,7 @@
+import { shapeSpeechText } from '../../extension/speechCore.js';
+
 export const LEGAL_EVIDENCE_KINDS = Object.freeze(['statute', 'statute-absence', 'correspondence']);
+export { shapeSpeechText };
 
 /**
  * Teaching System Prompt, prompt builder with grounding truthfulness,
@@ -192,46 +195,3 @@ export function buildFollowUpPrompt({ followUpQuestion, previousContext = '' }) 
   prompt += '\nAnswer the follow-up question directly and warmly. Do not re-explain the previous context unless the question requires it.';
   return prompt;
 }
-
-/**
- * Optimizes text for speech synthesis:
- * - Strips raw URLs and markdown formatting symbols (*, _, #, `, [ ]).
- * - Converts bullet points and numbered lists to fluid spoken transitions.
- * - Expands common programming operators into words where helpful.
- */
-export const shapeSpeechText = (text) => {
-  if (!text || typeof text !== 'string') return '';
-
-  let spoken = text;
-
-  // Remove URLs so they aren't read character-by-character
-  spoken = spoken.replace(/https?:\/\/\S+/gi, '');
-
-  // Remove markdown headers
-  spoken = spoken.replace(/^#{1,6}\s+/gm, '');
-
-  // Remove code block markers and inline backticks
-  spoken = spoken.replace(/```[a-zA-Z]*\n?/g, '');
-  spoken = spoken.replace(/`/g, '');
-
-  // Remove bold / italics asterisks and underscores
-  spoken = spoken.replace(/\*\*([^*]+)\*\*/g, '$1');
-  spoken = spoken.replace(/\*([^*]+)\*/g, '$1');
-  spoken = spoken.replace(/__([^_]+)__/g, '$1');
-  spoken = spoken.replace(/_([^_]+)_/g, '$1');
-
-  // Remove markdown link syntax [text](url) -> text
-  spoken = spoken.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-
-  // Remove citation brackets like [1], [Source 1]
-  spoken = spoken.replace(/\[(?:Source\s*)?\d+[^\]]*\]/gi, '');
-
-  // Strip list bullets (- or *) cleanly so the narrator speaks natural prose
-  spoken = spoken.replace(/^[\*\-]\s+/gm, '');
-
-  // Collapse multiple whitespaces and excessive newlines into clean sentence spacing
-  spoken = spoken.replace(/[ \t]+/g, ' ');
-  spoken = spoken.replace(/\n\s*\n+/g, ' ');
-
-  return spoken.trim();
-};

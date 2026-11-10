@@ -1,8 +1,8 @@
 """Long-lived local Chatterbox worker for DocVex.
 
-The worker uses newline-delimited JSON for control messages. Generated audio
-is written to a dedicated temporary directory and only controlled metadata is
-returned. The configured model is loaded once at startup.
+Focused solely on the newline-delimited JSON control protocol, request queueing,
+cancellation lifecycle, and temporary WAV output. Model loading/adaptation lives
+in `model_runtime.py` and broadcast audio mastering lives in `audio_mastering.py`.
 """
 
 from __future__ import annotations
@@ -25,10 +25,31 @@ import torch
 import torchaudio as ta
 
 CHECKOUT_ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(CHECKOUT_ROOT / "src"))
+for import_root in (CHECKOUT_ROOT, CHECKOUT_ROOT / "src"):
+    if str(import_root) not in sys.path:
+        sys.path.insert(0, str(import_root))
+
+from audio_mastering import (  # noqa: E402
+    AudioMasteringPipeline,
+    CANONICAL_SAMPLE_RATE,
+    MasteringProfile,
+    post_process_waveform,
+)
+from model_runtime import (  # noqa: E402
+    DEFAULT_CFM_STEPS,
+    DEFAULT_REP_PENALTY,
+    DEFAULT_TEMPERATURE,
+    DEFAULT_TOP_K,
+    DEFAULT_TOP_P,
+    MODEL_NAMES,
+    SynthesisAdapter,
+    SynthesisConfig,
+    choose_device,
+    create_synthesis_adapter,
+    load_model,
+)
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
-MODEL_NAMES = ("standard", "turbo", "nano")
 CONTROL_OUTPUT = sys.stdout
 
 
@@ -38,86 +59,17 @@ def write_message(message: dict[str, Any], output_lock: threading.Lock) -> None:
         CONTROL_OUTPUT.flush()
 
 
-def choose_device(requested: str) -> str:
-    if requested != "auto":
-        return requested
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
-
-
-def post_process_waveform(waveform: torch.Tensor, sr: int, target_peak_db: float = -1.5) -> torch.Tensor:
-    """Normalize peak volume to avoid digital clipping and apply gentle micro-fade at edges."""
-    if waveform.numel() == 0:
-        return waveform
-
-    # Peak normalization with headroom
-    peak = torch.max(torch.abs(waveform)).item()
-    if peak > 1e-4:
-        target_linear = 10.0 ** (target_peak_db / 20.0)
-        waveform = waveform * (target_linear / peak)
-
-    # Soft clamp
-    waveform = torch.clamp(waveform, -0.98, 0.98)
-
-    # Hann micro-fade-in/fade-out (5ms) to prevent audio pop/click at chunk boundaries
-    fade_len = min(int(sr * 0.005), waveform.shape[-1] // 4)
-    if fade_len > 1:
-        hann_window = torch.hann_window(
-            fade_len * 2,
-            device=waveform.device,
-            dtype=waveform.dtype,
-            periodic=False,
-        )
-        fade_in = hann_window[:fade_len]
-        fade_out = hann_window[fade_len:]
-        waveform = waveform.clone()
-        waveform[..., :fade_len] = waveform[..., :fade_len] * fade_in
-        waveform[..., -fade_len:] = waveform[..., -fade_len:] * fade_out
-
-    return waveform
-
-
-def load_model(model_name: str, device: str, voice_prompt_path: Path | None = None) -> Any:
-    if model_name == "standard":
-        from chatterbox.tts import ChatterboxTTS
-
-        model = ChatterboxTTS.from_pretrained(device=device)
-    elif model_name in {"turbo", "nano"}:
-        from chatterbox.tts_turbo import ChatterboxTurboTTS
-
-        model = ChatterboxTurboTTS.from_pretrained(device=device, nano=model_name == "nano")
-    else:
-        raise ValueError(f"Unsupported Chatterbox model: {model_name}")
-
-    # Prepare reference voice conditioning if voice prompt is provided or bundled
-    ref_voice = voice_prompt_path
-    if ref_voice is None:
-        voices_dir = CHECKOUT_ROOT / "voices"
-        # Prefer the highest-quality natural reference in order
-        for candidate in (
-            "studio_male_voiceover.wav",
-            "human_male_narrator.wav",
-        ):
-            candidate_path = voices_dir / candidate
-            if candidate_path.exists():
-                ref_voice = candidate_path
-                break
-
-    if ref_voice is not None and Path(ref_voice).exists():
-        try:
-            with contextlib.redirect_stdout(sys.stderr):
-                model.prepare_conditionals(str(ref_voice))
-        except Exception as exc:
-            sys.stderr.write(f"[Chatterbox Worker] Warning: failed to prepare reference voice {ref_voice}: {exc}\\n")
-
-    return model
-
-
 class ChatterboxWorker:
-    def __init__(self, model_name: str, device: str, temp_dir: Path):
+    """Thread-safe sequential synthesis worker managing queue and cancellation state."""
+
+    def __init__(
+        self,
+        model_name: str,
+        device: str,
+        temp_dir: Path,
+        synthesis_config: SynthesisConfig | None = None,
+        mastering_profile: MasteringProfile | None = None,
+    ):
         self.model_name = model_name
         self.device = device
         self.temp_dir = temp_dir.resolve()
@@ -128,6 +80,18 @@ class ChatterboxWorker:
         self.cancel_lock = threading.Lock()
         self.stopping = threading.Event()
         self.model: Any = None
+        self.adapter: SynthesisAdapter | None = None
+        self.synthesis_config = synthesis_config or SynthesisConfig()
+        self.mastering_profile = mastering_profile or MasteringProfile()
+        self.mastering_pipeline = AudioMasteringPipeline.from_profile(self.mastering_profile)
+
+    def attach_model(self, model: Any) -> None:
+        self.model = model
+        try:
+            self.adapter = create_synthesis_adapter(self.model_name, model)
+        except ValueError:
+            # Test fakes may pass arbitrary model names such as "test".
+            self.adapter = None
 
     def is_cancelled(self, request_id: str) -> bool:
         with self.cancel_lock:
@@ -143,6 +107,11 @@ class ChatterboxWorker:
             self.output_lock,
         )
 
+    def _synthesize_waveform(self, text: str) -> torch.Tensor:
+        if self.adapter is not None:
+            return self.adapter.synthesize(text, self.synthesis_config)
+        return self.model.generate(text.strip())
+
     def synthesize(self, request: dict[str, Any]) -> None:
         request_id = request["id"]
         started = time.perf_counter()
@@ -153,39 +122,32 @@ class ChatterboxWorker:
                 self.emit_error(request_id, "Request was cancelled before synthesis.", "CANCELLED")
                 return
 
-            generate_kwargs: dict[str, Any] = {}
-            if self.model_name in {"turbo", "nano"}:
-                generate_kwargs["n_cfm_timesteps"] = 4
-
             with torch.inference_mode():
                 with contextlib.redirect_stdout(sys.stderr):
-                    waveform = self.model.generate(
-                        request["text"].strip(),
-                        **generate_kwargs,
-                    )
+                    waveform = self._synthesize_waveform(request["text"])
 
             if self.is_cancelled(request_id):
                 return
             if waveform.ndim != 2 or waveform.shape[0] != 1:
                 raise RuntimeError(f"Unexpected waveform shape: {tuple(waveform.shape)}")
 
-            waveform = post_process_waveform(waveform, self.model.sr)
+            waveform, output_sr = self.mastering_pipeline.process(waveform, self.model.sr)
 
             filename = f"{request_id}-{uuid.uuid4().hex}.wav"
             output_path = self.temp_dir / filename
-            ta.save(str(output_path), waveform.detach().cpu(), self.model.sr)
+            ta.save(str(output_path), waveform.detach().cpu(), output_sr)
 
             if self.is_cancelled(request_id):
                 output_path.unlink(missing_ok=True)
                 return
 
-            duration = waveform.shape[-1] / self.model.sr
+            duration = waveform.shape[-1] / output_sr
             write_message(
                 {
                     "type": "audio",
                     "id": request_id,
                     "file": filename,
-                    "sample_rate": self.model.sr,
+                    "sample_rate": output_sr,
                     "duration_seconds": duration,
                     "generated_audio_available_seconds": time.perf_counter() - started,
                 },
@@ -241,19 +203,34 @@ def validate_request(message: Any) -> tuple[str, dict[str, Any] | None, str | No
     return request_id, None, "Unsupported worker message type."
 
 
-def run_worker(model_name: str, device: str, temp_dir: Path, voice_prompt: Path | None = None) -> None:
+def run_worker(
+    model_name: str,
+    device: str,
+    temp_dir: Path,
+    voice_prompt: Path | None = None,
+    synthesis_config: SynthesisConfig | None = None,
+    mastering_profile: MasteringProfile | None = None,
+) -> None:
     output_lock = threading.Lock()
-    worker = ChatterboxWorker(model_name, device, temp_dir)
+    worker = ChatterboxWorker(
+        model_name,
+        device,
+        temp_dir,
+        synthesis_config=synthesis_config,
+        mastering_profile=mastering_profile,
+    )
 
     try:
         load_started = time.perf_counter()
         with contextlib.redirect_stdout(sys.stderr):
-            worker.model = load_model(model_name, device, voice_prompt_path=voice_prompt)
+            model = load_model(model_name, device, voice_prompt_path=voice_prompt)
+            worker.attach_model(model)
         write_message(
             {
                 "type": "ready",
                 "model": model_name,
                 "device": device,
+                "sample_rate": worker.mastering_profile.target_sample_rate,
                 "load_seconds": time.perf_counter() - load_started,
                 "temp_dir": str(worker.temp_dir),
                 "native_incremental_generation": False,
@@ -314,8 +291,34 @@ def main() -> None:
     parser.add_argument("--device", choices=("auto", "cpu", "mps", "cuda"), default="auto")
     parser.add_argument("--temp-dir", type=Path, default=Path(tempfile.gettempdir()) / "docvex-chatterbox")
     parser.add_argument("--voice-prompt", type=Path, default=None)
+    parser.add_argument("--cfm-steps", type=int, default=DEFAULT_CFM_STEPS)
+    parser.add_argument("--temperature", type=float, default=DEFAULT_TEMPERATURE)
+    parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K)
+    parser.add_argument("--top-p", type=float, default=DEFAULT_TOP_P)
+    parser.add_argument("--rep-penalty", type=float, default=DEFAULT_REP_PENALTY)
+    parser.add_argument("--target-sr", type=int, default=CANONICAL_SAMPLE_RATE)
+    parser.add_argument("--target-lufs", type=float, default=-19.0)
     args = parser.parse_args()
-    run_worker(args.model, choose_device(args.device), args.temp_dir, voice_prompt=args.voice_prompt)
+
+    synthesis_config = SynthesisConfig(
+        cfm_steps=max(1, args.cfm_steps),
+        temperature=args.temperature,
+        top_k=args.top_k,
+        top_p=args.top_p,
+        repetition_penalty=args.rep_penalty,
+    )
+    mastering_profile = MasteringProfile(
+        target_sample_rate=max(8000, args.target_sr),
+        target_lufs=args.target_lufs,
+    )
+    run_worker(
+        args.model,
+        choose_device(args.device),
+        args.temp_dir,
+        voice_prompt=args.voice_prompt,
+        synthesis_config=synthesis_config,
+        mastering_profile=mastering_profile,
+    )
 
 
 if __name__ == "__main__":
