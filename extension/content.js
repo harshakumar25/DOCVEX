@@ -56,10 +56,20 @@
     t7: 0, // full generation finished
   };
 
-  // --- Text & Boundary Helpers ---
-  const NON_TERMINATING_ABBREVIATIONS = new Set([
-    'e.g', 'i.e', 'vs', 'etc', 'dr', 'mr', 'mrs', 'ms', 'prof', 'inc', 'ltd', 'co', 'approx', 'dept', 'fig', 'no', 'vol', 'al'
-  ]);
+  // --- Shared Speech & Voice Modules (Single Source of Truth) ---
+  let speechCore = null;
+  let voiceSelector = null;
+  const sharedModulesReady = (typeof chrome !== 'undefined' && chrome.runtime?.getURL)
+    ? Promise.all([
+        import(chrome.runtime.getURL('speechCore.js')),
+        import(chrome.runtime.getURL('voiceSelector.js')),
+      ]).then(([sc, vs]) => {
+        speechCore = sc;
+        voiceSelector = vs;
+      }).catch((err) => {
+        console.warn('[DocVex] Failed to load shared speech modules:', err);
+      })
+    : Promise.resolve();
 
   function isSafeUrl(urlString) {
     try {
@@ -67,174 +77,6 @@
       return parsed.protocol === 'http:' || parsed.protocol === 'https:';
     } catch {
       return false;
-    }
-  }
-
-  function shapeSpeechText(text) {
-    if (!text || typeof text !== 'string') return '';
-    let spoken = text;
-    // Remove raw URLs
-    spoken = spoken.replace(/https?:\/\/\S+/gi, '');
-    // Remove markdown headers
-    spoken = spoken.replace(/^#{1,6}\s+/gm, '');
-    // Remove code blocks and inline backticks
-    spoken = spoken.replace(/```[a-zA-Z]*\n?/g, '');
-    spoken = spoken.replace(/`/g, '');
-    // Remove bold / italics
-    spoken = spoken.replace(/\*\*([^*]+)\*\*/g, '$1');
-    spoken = spoken.replace(/\*([^*]+)\*/g, '$1');
-    spoken = spoken.replace(/__([^_]+)__/g, '$1');
-    spoken = spoken.replace(/_([^_]+)_/g, '$1');
-    // Remove citation formatting [Source 1], [1], [link](url)
-    spoken = spoken.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-    spoken = spoken.replace(/\[(?:Source\s*)?\d+[^\]]*\]/gi, '');
-    // Strip list bullets cleanly (same as server shapeSpeechText)
-    spoken = spoken.replace(/^[\*\-]\s+/gm, '');
-    // Normalize spaces and line breaks
-    spoken = spoken.replace(/[ \t]+/g, ' ');
-    spoken = spoken.replace(/\n\s*\n+/g, ' ');
-    return spoken.trim();
-  }
-
-  function isFalseBoundary(text, punctuationIndex) {
-    const char = text[punctuationIndex];
-
-    if (char === '.') {
-      const prevChar = text[punctuationIndex - 1];
-      const nextChar = text[punctuationIndex + 1];
-
-      // Decimal number (e.g. 3.14) or version (e.g. 1.2)
-      if (/\d/.test(prevChar) && /\d/.test(nextChar)) {
-        return true;
-      }
-
-      // Ellipsis (...)
-      if (prevChar === '.' || nextChar === '.') {
-        return true;
-      }
-
-      // URL or domain suffix
-      const surrounding = text.slice(Math.max(0, punctuationIndex - 15), Math.min(text.length, punctuationIndex + 15));
-      if (/https?:\/\/|\.com|\.org|\.net|\.io|\.edu|\.gov/i.test(surrounding)) {
-        return true;
-      }
-
-      // Preceding abbreviation word
-      const preceding = text.slice(Math.max(0, punctuationIndex - 10), punctuationIndex);
-      const lastWordMatch = preceding.match(/([a-zA-Z0-9\._]+)$/);
-      if (lastWordMatch) {
-        const candidate = lastWordMatch[1].toLowerCase().replace(/\.$/, '');
-        if (NON_TERMINATING_ABBREVIATIONS.has(candidate)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
-
-  // Classify the gap after a sentence split: paragraph break = 1000ms, normal = 0ms
-  function classifyPause(text, punctEndIndex) {
-    const remainder = text.slice(punctEndIndex);
-    if (/^\s*\n\s*\n/.test(remainder)) return 1000;
-    return 0;
-  }
-
-  // --- SentenceBuffer Class ---
-  class ClientSentenceBuffer {
-    constructor({ onSentence, minSentenceLength = 4, maxUtteranceLength = 360 }) {
-      this.buffer = '';
-      this.onSentence = onSentence;
-      this.minSentenceLength = minSentenceLength;
-      this.maxUtteranceLength = maxUtteranceLength;
-      this.sentenceIndex = 0;
-    }
-
-    addToken(token) {
-      if (!token || typeof token !== 'string') return;
-      this.buffer += token;
-      this.process();
-    }
-
-    emitClamped(candidate, pauseAfterMs = 0) {
-      const cleaned = shapeSpeechText(candidate);
-      if (!cleaned || cleaned.length < this.minSentenceLength) return;
-
-      if (cleaned.length <= this.maxUtteranceLength) {
-        this.sentenceIndex++;
-        this.onSentence(cleaned, this.sentenceIndex, pauseAfterMs);
-        return;
-      }
-
-      let remaining = cleaned;
-      while (remaining.length > this.maxUtteranceLength) {
-        const slice = remaining.slice(0, this.maxUtteranceLength);
-        const match = slice.match(/.*([,;:—]|\s-\s)\s*/);
-        let splitAt = -1;
-        if (match && match[0].length >= this.minSentenceLength) {
-          splitAt = match[0].length;
-        } else {
-          splitAt = slice.lastIndexOf(' ');
-        }
-
-        if (splitAt <= 0 || splitAt < this.minSentenceLength) {
-          splitAt = this.maxUtteranceLength;
-        }
-
-        const part = remaining.slice(0, splitAt).trim();
-        if (part.length > 0) {
-          this.sentenceIndex++;
-          this.onSentence(part, this.sentenceIndex, 0);
-        }
-        remaining = remaining.slice(splitAt).trim();
-      }
-
-      if (remaining.length >= this.minSentenceLength) {
-        this.sentenceIndex++;
-        this.onSentence(remaining, this.sentenceIndex, pauseAfterMs);
-      }
-    }
-
-    process() {
-      const boundaryRegex = /([.?!]+)(\s+|\n+|$)/g;
-      let match;
-
-      while ((match = boundaryRegex.exec(this.buffer)) !== null) {
-        const punctIndex = match.index;
-        const punctLength = match[1].length;
-        const spaceLength = match[2].length;
-        const splitIndex = punctIndex + punctLength + spaceLength;
-
-        if (splitIndex >= this.buffer.length && spaceLength === 0) {
-          break;
-        }
-
-        if (isFalseBoundary(this.buffer, punctIndex)) {
-          continue;
-        }
-
-        const candidate = this.buffer.slice(0, splitIndex).trim();
-
-        if (candidate.length >= this.minSentenceLength) {
-          const pauseAfterMs = classifyPause(this.buffer, punctIndex + punctLength);
-          this.emitClamped(candidate, pauseAfterMs);
-          this.buffer = this.buffer.slice(splitIndex);
-          boundaryRegex.lastIndex = 0;
-        }
-      }
-    }
-
-    flush() {
-      const remaining = this.buffer.trim();
-      if (remaining.length > 0) {
-        this.emitClamped(remaining);
-      }
-      this.buffer = '';
-    }
-
-    reset() {
-      this.buffer = '';
-      this.sentenceIndex = 0;
     }
   }
 
@@ -1295,52 +1137,6 @@
     sourcesDiv.style.display = 'block';
   }
 
-  // Filter out harsh, robotic novelty voices and synthetic irritants (Daniel, Alex, Fred, etc.)
-  const NOVELTY_OR_ROBOTIC_VOICE_NAMES = new Set([
-    'daniel', 'alex', 'albert', 'bad news', 'bahh', 'bells', 'boing', 'bubbles',
-    'cellos', 'deranged', 'good news', 'hysterical', 'jester',
-    'organ', 'superstar', 'trinoids', 'whisper', 'wobble', 'zarvox', 'junior', 'ralph',
-    'fred', 'grandpa', 'eddy', 'reed', 'rocko'
-  ]);
-
-  const FEMALE_VOICE_NAMES = new Set([
-    'samantha', 'ava', 'serena', 'karen', 'moira', 'tessa', 'victoria', 'fiona',
-    'allison', 'susan', 'veena', 'yuri', 'kyoko', 'amelie', 'anna', 'carmit',
-    'damayanti', 'ellen', 'ioana', 'joana', 'kanya', 'katya', 'luciana', 'mariska',
-    'meijia', 'melina', 'milena', 'monica', 'nora', 'paulina', 'satu', 'sinji',
-    'tingting', 'yelda', 'yuna', 'zosia', 'zuzana', 'flo', 'grandma', 'kathy',
-    'sandy', 'shelley', 'tara', 'alice', 'alva', 'amira', 'daria', 'female'
-  ]);
-
-  const PREFERRED_MALE_VOICE_NAMES = [
-    'oliver', 'rishi', 'aman', 'aaron', 'george', 'arthur', 'tom',
-    'male', 'natural', 'neural', 'premium', 'enhanced', 'google'
-  ];
-
-  function selectBestSpeechVoice(voices) {
-    if (!voices || voices.length === 0) return null;
-    const nonFemaleVoices = voices.filter((v) => {
-      const lowerName = (v.name || '').toLowerCase();
-      const isRobotic = Array.from(NOVELTY_OR_ROBOTIC_VOICE_NAMES).some((bad) => lowerName === bad || lowerName.includes(bad));
-      const isFemale = Array.from(FEMALE_VOICE_NAMES).some((fem) => lowerName === fem || lowerName.startsWith(`${fem} `) || lowerName.includes(` ${fem}`));
-      return !isRobotic && !isFemale;
-    });
-
-    const candidatePool = nonFemaleVoices.length > 0 ? nonFemaleVoices : voices.filter((v) => {
-      const lowerName = (v.name || '').toLowerCase();
-      return !Array.from(FEMALE_VOICE_NAMES).some((fem) => lowerName === fem || lowerName.includes(fem));
-    });
-
-    const englishVoices = candidatePool.filter((v) => v.lang && v.lang.startsWith('en'));
-    const searchPool = englishVoices.length > 0 ? englishVoices : candidatePool;
-
-    for (const preferred of PREFERRED_MALE_VOICE_NAMES) {
-      const match = searchPool.find((v) => (v.name || '').toLowerCase().includes(preferred));
-      if (match) return match;
-    }
-    return searchPool[0] || null;
-  }
-
   let cachedVoices = [];
   function updateVoices() {
     if ('speechSynthesis' in window) {
@@ -1384,7 +1180,7 @@
     utterance.pitch = 1.0;
 
     const voices = cachedVoices.length > 0 ? cachedVoices : window.speechSynthesis.getVoices();
-    const naturalVoice = selectBestSpeechVoice(voices);
+    const naturalVoice = voiceSelector ? voiceSelector.selectBestSpeechVoice(voices) : null;
     if (naturalVoice) {
       utterance.voice = naturalVoice;
     }
@@ -1622,11 +1418,12 @@
     updatePlayButtonState();
   }
 
-  function startSpeechQueueFromText(fullText) {
+  async function startSpeechQueueFromText(fullText) {
+    await sharedModulesReady;
     stopSpeech();
     const currentReq = activeRequestId || 'local_replay';
-    // Use ClientSentenceBuffer for correct false-boundary-safe sentence splitting
-    const replayBuffer = new ClientSentenceBuffer({
+    if (!speechCore) return;
+    const replayBuffer = new speechCore.SentenceBuffer({
       minSentenceLength: 4,
       onSentence: (sentence, index) => {
         queueSpeechSentence(sentence, index, currentReq);
@@ -1659,7 +1456,8 @@
   // --- Main Teaching Flow ---
   let lastTriggerTime = 0;
 
-  function triggerTeaching(selectionOverride = null, followUpOpts = {}) {
+  async function triggerTeaching(selectionOverride = null, followUpOpts = {}) {
+    await sharedModulesReady;
     const now = performance.now();
     if (now - lastTriggerTime < 500) {
       return;
@@ -1712,24 +1510,26 @@
     let accumulatedText = '';
     currentSpeechText = '';
 
-    // 3. Initialize SentenceBuffer for this session
-    const sentenceBuffer = new ClientSentenceBuffer({
-      minSentenceLength: 4,
-      onSentence: (sentence, index) => {
-        if (requestId !== activeRequestId) return;
+    // 3. Initialize SentenceBuffer from shared speechCore module
+    const sentenceBuffer = speechCore
+      ? new speechCore.SentenceBuffer({
+          minSentenceLength: 4,
+          onSentence: (sentence, index) => {
+            if (requestId !== activeRequestId) return;
 
-        if (index === 1 && timingMetrics.t5 === 0) {
-          timingMetrics.t5 = performance.now();
-          const latencyT5 = Math.round(timingMetrics.t5 - timingMetrics.t0);
-          console.log(`[DocVex Timing] First Complete Sentence (T0->T5): ${latencyT5}ms: "${sentence}"`);
-        }
+            if (index === 1 && timingMetrics.t5 === 0) {
+              timingMetrics.t5 = performance.now();
+              const latencyT5 = Math.round(timingMetrics.t5 - timingMetrics.t0);
+              console.log(`[DocVex Timing] First Complete Sentence (T0->T5): ${latencyT5}ms: "${sentence}"`);
+            }
 
-        // Chatterbox audio arrives through the background worker; use browser speech only as fallback.
-        if (!chatterboxEnabled) {
-          queueSpeechSentence(sentence, index, requestId);
-        }
-      },
-    });
+            // Chatterbox audio arrives through the background worker; use browser speech only as fallback.
+            if (!chatterboxEnabled) {
+              queueSpeechSentence(sentence, index, requestId);
+            }
+          },
+        })
+      : null;
 
     // 4. Connect bidirectional port to background service worker
     try {
@@ -1774,10 +1574,10 @@
           accumulatedText += data.token;
           currentSpeechText = accumulatedText;
           updateHUDExplanation(accumulatedText);
-          sentenceBuffer.addToken(data.token);
+          sentenceBuffer?.addToken(data.token);
         } else if (event === 'speech_done') {
           // Voice explanation stream finished; flush speech buffer so all sentences play cleanly
-          sentenceBuffer.flush();
+          sentenceBuffer?.flush();
           if (!isSpeaking) {
             updateHUDStatus(chatterboxEnabled ? '🎙️ Synthesizing voice with Chatterbox…' : '🔊 Speaking explanation…');
           }
@@ -1802,7 +1602,7 @@
           console.log(`[DocVex Timing] Full Generation Finished (T0->T7): ${latencyT7}ms`);
 
           // Flush any remaining characters in the sentence buffer
-          sentenceBuffer.flush();
+          sentenceBuffer?.flush();
 
           if (data.groundingStatus) {
             updateHUDBadge(data.groundingStatus);

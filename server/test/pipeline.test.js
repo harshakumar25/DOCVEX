@@ -26,21 +26,29 @@ test('teachPipeline executes complete flow and shapes response', async () => {
 });
 
 test('teachPipeline fails gracefully when Groq is selected without API key', async () => {
-  await assert.rejects(
-    async () => {
-      await teachPipeline(
-        {
-          text: 'TCP handshake establishes connection.',
-          title: 'Networking Concepts',
-          provider: 'groq',
-        },
-        { GROQ_API_KEY: '' }
-      );
-    },
-    (err) => {
-      assert.equal(err.statusCode, 400);
-      assert.ok(err.message.includes('Groq API key is missing'));
-      return true;
-    }
-  );
+  // The provider falls back to process.env.GROQ_API_KEY (loaded from .env), so hide it:
+  // otherwise this test makes a real Groq call whenever a developer has a key configured.
+  const savedKey = process.env.GROQ_API_KEY;
+  delete process.env.GROQ_API_KEY;
+  try {
+    await assert.rejects(
+      async () => {
+        await teachPipeline(
+          {
+            text: 'TCP handshake establishes connection.',
+            title: 'Networking Concepts',
+            provider: 'groq',
+          },
+          { GROQ_API_KEY: '' }
+        );
+      },
+      (err) => {
+        assert.equal(err.statusCode, 400);
+        assert.ok(err.message.includes('Groq API key is missing'));
+        return true;
+      }
+    );
+  } finally {
+    if (savedKey !== undefined) process.env.GROQ_API_KEY = savedKey;
+  }
 });

@@ -18,3 +18,10 @@ scratch/
 tmp/
 .docvex-audio/
 .brave-profile/
+
+# LawBuddy local legal store and raw fetch vault
+.lawbuddy/
+
+# LawBuddy Python worker environment
+workers/.venv/
+workers/__pycache__/

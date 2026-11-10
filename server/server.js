@@ -7,6 +7,50 @@ import { config } from './config.js';
 import { getChatterboxProvider, teachPipeline, streamTeachPipeline } from './pipeline.js';
 import { DEFAULT_TRUSTED_DOMAINS } from './retrieval/trustedSources.js';
 import { listPlugins, executePlugin, setPluginEnabled } from './plugins/pluginManager.js';
+import {
+  config as legalConfig,
+  LAW_SYSTEM_PROMPT,
+  checkLegalAnswer,
+  critiqueAnswer,
+  createLawRetriever,
+  createLegalStoreLoader,
+  handleLawBuddyStaticRoute,
+  handleLawBuddyApiRoute,
+  LAWBUDDY_FILES,
+  LAWBUDDY_SECURITY_HEADERS,
+} from '@docvex/lawbuddy';
+
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+const STATIC_TEXT_ASSETS = Object.freeze({
+  '/demo': { file: 'demo.html', type: 'text/html; charset=utf-8', missing: 'Dashboard page not found.' },
+  '/demo.html': { file: 'demo.html', type: 'text/html; charset=utf-8', missing: 'Dashboard page not found.' },
+  '/': { file: 'demo.html', type: 'text/html; charset=utf-8', missing: 'Dashboard page not found.' },
+  '/dashboard': { file: 'demo.html', type: 'text/html; charset=utf-8', missing: 'Dashboard page not found.' },
+  '/manifest.webmanifest': { file: 'manifest.webmanifest', type: 'application/manifest+json; charset=utf-8', missing: 'Manifest not found.' },
+  '/sw.js': { file: 'sw.js', type: 'application/javascript; charset=utf-8', missing: 'Service worker not found.' },
+  '/assets/voiceSelector.js': { file: 'extension/voiceSelector.js', type: 'application/javascript; charset=utf-8', missing: 'Voice selector asset not found.' },
+  '/assets/speechCore.js': { file: 'extension/speechCore.js', type: 'application/javascript; charset=utf-8', missing: 'Speech core asset not found.' },
+});
+
+const serveStaticTextAsset = (req, res, pathname) => {
+  const asset = STATIC_TEXT_ASSETS[pathname];
+  if (!asset || (req.method !== 'GET' && req.method !== 'HEAD')) return false;
+  try {
+    const content = readFileSync(path.join(REPO_ROOT, asset.file), 'utf8');
+    res.writeHead(200, { 'Content-Type': asset.type });
+    if (req.method === 'HEAD') {
+      res.end();
+      return true;
+    }
+    res.end(content);
+    return true;
+  } catch {
+    sendJson(res, 404, { error: asset.missing }, req);
+    return true;
+  }
+};
 
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1', '0.0.0.0']);
 
@@ -104,7 +148,11 @@ export const checkOllamaStatus = async (ollamaHost, targetModel) => {
 };
 
 // Validate request payload for /teach
-export const validateTeachInput = (body, maxLength = config.MAX_SELECTION_LENGTH) => {
+export const validateTeachInput = (
+  body,
+  maxLength = config.MAX_SELECTION_LENGTH,
+  defaultProvider = config.DEFAULT_PROVIDER
+) => {
   if (!body || typeof body !== 'object') {
     return { valid: false, error: 'Request body must be a JSON object.' };
   }
@@ -146,7 +194,7 @@ export const validateTeachInput = (body, maxLength = config.MAX_SELECTION_LENGTH
       url: url?.trim() || '',
       title: title?.trim() || '',
       pageContext: pageContext?.trim() || '',
-      provider: provider || config.DEFAULT_PROVIDER,
+      provider: provider || defaultProvider,
       isFollowUp: Boolean(isFollowUp),
       followUpContext: typeof followUpContext === 'string' ? followUpContext.slice(0, 1200) : '',
     },
@@ -157,7 +205,12 @@ export const createServer = (options = {}) => {
   const serverConfig = { ...config, ...options };
   let activeUpstreamController = null;
 
-  return http.createServer(async (req, res) => {
+  // LawBuddy lives on its own /lawbuddy routes; /teach stays plain DocVex.
+  const legalLibrary = createLegalStoreLoader({ store: serverConfig.legalStore ?? null, dbPath: serverConfig.LEGAL_DB_PATH });
+  const lawRetriever = serverConfig.lawRetriever || createLawRetriever({ loader: legalLibrary });
+  const LIBRARY_MISSING = 'LawBuddy legal library is not installed. Import and ingest it first, e.g. npm run legal -- ingest-constitution <url>.';
+
+  const server = http.createServer(async (req, res) => {
     const isOriginAllowed = applyOriginSecurity(req, res);
 
     // Handle CORS preflight
@@ -279,6 +332,8 @@ export const createServer = (options = {}) => {
             device: serverConfig.CHATTERBOX_DEVICE,
             ready: Boolean(chatterbox?.isReady?.()),
             tempDir: serverConfig.CHATTERBOX_TEMP_DIR,
+            sampleRate: serverConfig.CHATTERBOX_TARGET_SR,
+            cfmSteps: serverConfig.CHATTERBOX_CFM_STEPS,
           },
         },
       }, req);
@@ -370,59 +425,51 @@ export const createServer = (options = {}) => {
       return sendJson(res, 200, { success: true, plugin: updated }, req);
     }
 
-    // Interactive Dashboard & Test Bench Endpoint
-    if ((req.method === 'GET' || req.method === 'HEAD') && (pathname === '/demo' || pathname === '/demo.html' || pathname === '/' || pathname === '/dashboard')) {
-      try {
-        const demoPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../demo.html');
-        const html = readFileSync(demoPath, 'utf8');
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        if (req.method === 'HEAD') {
-          res.end();
-          return;
-        }
-        res.end(html);
-        return;
-      } catch {
-        return sendJson(res, 404, { error: 'Dashboard page not found.' }, req);
-      }
-    }
-
-    // PWA Manifest Endpoint
-    if ((req.method === 'GET' || req.method === 'HEAD') && pathname === '/manifest.webmanifest') {
-      try {
-        const manifestPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../manifest.webmanifest');
-        const manifest = readFileSync(manifestPath, 'utf8');
-        res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8' });
-        if (req.method === 'HEAD') {
-          res.end();
-          return;
-        }
-        res.end(manifest);
-        return;
-      } catch {
-        return sendJson(res, 404, { error: 'Manifest not found.' }, req);
-      }
-    }
-
-    // PWA Service Worker Endpoint
-    if ((req.method === 'GET' || req.method === 'HEAD') && pathname === '/sw.js') {
-      try {
-        const swPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../sw.js');
-        const swCode = readFileSync(swPath, 'utf8');
-        res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8' });
-        if (req.method === 'HEAD') {
-          res.end();
-          return;
-        }
-        res.end(swCode);
-        return;
-      } catch {
-        return sendJson(res, 404, { error: 'Service worker not found.' }, req);
-      }
+    if (serveStaticTextAsset(req, res, pathname)) {
+      return;
     }
 
     // Teach Endpoint
-    if (req.method === 'POST' && pathname === '/teach') {
+    // LawBuddy website pages and assets (GET /lawbuddy, GET /lawbuddy/teach, /lawbuddy/assets/*)
+    if (handleLawBuddyStaticRoute(req, res, pathname, LAWBUDDY_FILES)) {
+      return;
+    }
+
+    // LawBuddy library API: health, provisions, search and the official old↔new section tables
+    if (await handleLawBuddyApiRoute(req, res, {
+      pathname,
+      parsedUrl,
+      legalLibrary,
+      sendJson,
+      libraryMissingMessage: LIBRARY_MISSING,
+      reportOptions: serverConfig,
+    })) {
+      return;
+    }
+
+    if (req.method === 'POST' && (pathname === '/teach' || pathname === '/lawbuddy/teach' || pathname === '/advocatevox/teach')) {
+      // Same request/stream contract on both routes; POST /lawbuddy/teach or /advocatevox/teach teaches only from the legal library.
+      // LawBuddy answers fit Groq's free tier (8,000 tokens per minute): a short system prompt, a set answer
+      // allowance and low reasoning effort.
+      const routeOptions = (pathname === '/lawbuddy/teach' || pathname === '/advocatevox/teach')
+        ? {
+          mode: 'law',
+          retrieveVerifiedReferences: lawRetriever,
+          checkAnswer: checkLegalAnswer,
+          // A critique that cannot run is reported, never silently dropped: the student must know the claims
+          // were not read against the law this time.
+          critiqueAnswer: (answer, evidence) => critiqueAnswer({ answer, evidence }).catch((error) => {
+            console.warn(`[LawBuddy] critique unavailable: ${error.message}`);
+            return { unavailable: /429|rate|quota|413|too large/i.test(error.message)
+              ? 'the model\'s free quota was used up by the answer itself'
+              : 'the checking model did not respond' };
+          }),
+          systemPrompt: LAW_SYSTEM_PROMPT,
+          GROQ_MODEL: legalConfig.LEGAL_ANSWER_MODEL,
+          GROQ_MAX_TOKENS: 2600,
+          GROQ_REASONING_EFFORT: 'low',
+        }
+        : {};
       let body;
       try {
         body = await parseJsonBody(req);
@@ -430,9 +477,14 @@ export const createServer = (options = {}) => {
         return sendJson(res, 400, { error: err.message }, req);
       }
 
-      const validation = validateTeachInput(body, serverConfig.MAX_SELECTION_LENGTH);
+      const validation = validateTeachInput(body, serverConfig.MAX_SELECTION_LENGTH, serverConfig.DEFAULT_PROVIDER);
       if (!validation.valid) {
         return sendJson(res, 400, { error: validation.error }, req);
+      }
+      // LawBuddy answers only from the grounded stream: hybrid's background local "insights" are not
+      // grounded in the official text, so law mode runs Groq (or local Ollama when no Groq key is set).
+      if (routeOptions.mode === 'law' && validation.data.provider === 'hybrid') {
+        validation.data.provider = serverConfig.GROQ_API_KEY ? 'groq' : 'ollama';
       }
 
       // Server-side supersession: abort any ongoing upstream model inference immediately
@@ -509,7 +561,7 @@ export const createServer = (options = {}) => {
                 res.end();
               },
               signal: currentController.signal,
-              options: { ...serverConfig, isFollowUp: validation.data.isFollowUp, followUpContext: validation.data.followUpContext },
+              options: { ...serverConfig, isFollowUp: validation.data.isFollowUp, followUpContext: validation.data.followUpContext, ...routeOptions },
             }
           );
         } catch (err) {
@@ -529,7 +581,7 @@ export const createServer = (options = {}) => {
 
       const handler = serverConfig.teachHandler || teachPipeline;
       try {
-        const result = await handler(validation.data, { ...serverConfig, signal: currentController.signal, isFollowUp: validation.data.isFollowUp, followUpContext: validation.data.followUpContext });
+        const result = await handler(validation.data, { ...serverConfig, signal: currentController.signal, isFollowUp: validation.data.isFollowUp, followUpContext: validation.data.followUpContext, ...routeOptions });
         clearActiveController();
         return sendJson(res, 200, result, req);
       } catch (err) {
@@ -542,6 +594,9 @@ export const createServer = (options = {}) => {
     // 404 for unknown endpoints
     return sendJson(res, 404, { error: 'Not found' }, req);
   });
+
+  server.on('close', () => legalLibrary.close());
+  return server;
 };
 
 // Start the server directly if executed as main
