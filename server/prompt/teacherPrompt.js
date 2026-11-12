@@ -1,3 +1,8 @@
+import { shapeSpeechText } from '../../extension/speechCore.js';
+
+export const LEGAL_EVIDENCE_KINDS = Object.freeze(['statute', 'statute-absence', 'correspondence']);
+export { shapeSpeechText };
+
 /**
  * Teaching System Prompt, prompt builder with grounding truthfulness,
  * and speech-optimization transformations for DocVex.
@@ -61,6 +66,26 @@ Strict Voiceover Directing Rules:
 - Stop speaking once the core mental model is crystal clear.`;
 
 /**
+ * System prompt used when the user interrupted Docy mid-explanation and asked
+ * a follow-up question. Tone must be warm, relaxed, and energetic — like a
+ * teacher who is genuinely happy the student spoke up.
+ */
+export const DOCY_FOLLOWUP_SYSTEM_PROMPT = `You are Docy, the DocVex voice assistant. The student just paused you and asked a follow-up question while you were explaining something. They are curious and engaged — this is great!
+
+Your job right now:
+- Answer their specific question directly and warmly. Start speaking immediately.
+- Sound like a friend who genuinely loves this topic — enthusiastic, natural, zero formality.
+- If you have context about what you were explaining before (provided as "Previous explanation context"), weave it in naturally. Don't re-explain everything — just connect the dots.
+- Keep it tight: 2 to 4 sentences for simple questions, up to 6 sentences for complex ones. Stop when the answer lands.
+- Use casual spoken English. Hinglish phrases in the question are totally fine — respond naturally and acknowledge their phrasing warmly if it helps.
+
+Delivery rules:
+- No lecture structure. No "Firstly / Secondly". No bullet points. No markdown.
+- Vary your pace — punch the key word, breeze through the filler.
+- End with a confident one-liner that closes the loop or invites them to dig deeper.
+- Never start with "Sure", "Great question", "Certainly", or any assistant filler.`;
+
+/**
  * Assembles the user-turn prompt and reports, honestly, whether any real
  * evidence backs it.
  *
@@ -70,17 +95,28 @@ Strict Voiceover Directing Rules:
  * @param {string} [params.pageTitle]
  * @param {Array<{domain: string, content: string}>} [params.evidence] - must
  *   already be REAL fetched/sanitized text, never placeholder strings.
+ * @param {'general'|'law'} [params.mode] - 'law' (the /lawbuddy route) never
+ *   falls back to general knowledge.
+ * @param {{ direction?: string|null }} [params.analysis] - LawBuddy's question analysis: when it gives an
+ *   answer format (a "can I…" question is answered as allows / forbids / where the line is), that format
+ *   replaces the default tutor direction.
  * @returns {{ userPrompt: string, groundingStatus: 'grounded'|'ungrounded', sourceDomains: string[] }}
  */
-export function buildTeachingPrompt({ selectedText, pageUrl, pageTitle, evidence = [] }) {
+const LEGAL_CAUTIONS = 'If the evidence carries a CAUTION that a court invalidated part of the printed text, say clearly that it is not good law as printed. If it marks an amendment as PENDING or a provision as NOT IN FORCE, say so and do not present it as law in force. If a provision was not found, say it could not be verified and do not guess its contents. Do not cite any case, judgment, or section that is not in the evidence.';
+
+export function buildTeachingPrompt({ selectedText, pageUrl, pageTitle, evidence = [], mode = 'general', analysis = null }) {
   const trusted = evidence.filter((e) => e && e.domain && e.content && e.content.trim().length > 0);
   const groundingStatus = trusted.length > 0 ? 'grounded' : 'ungrounded';
+  const isLegal = mode === 'law' || trusted.some((e) => LEGAL_EVIDENCE_KINDS.includes(e.kind));
 
+  const noEvidence = isLegal
+    ? '(LawBuddy found nothing for this request in its verified library of official legal texts)'
+    : '(no verified evidence retrieved for this request — explain from general knowledge only)';
   const evidenceBlock = trusted.length
     ? trusted
         .map((e, i) => `[${i + 1}] source: ${e.domain}\n<evidence>\n${e.content}\n</evidence>`)
         .join('\n\n')
-    : '(no verified evidence retrieved for this request — explain from general knowledge only)';
+    : noEvidence;
 
   // Cap input at 4000 chars to keep Groq first-token latency under 600ms for any selection size
   const MAX_TEACH_CHARS = 4000;
@@ -93,7 +129,13 @@ export function buildTeachingPrompt({ selectedText, pageUrl, pageTitle, evidence
   const isCodeOrDsa = /\b(class|public|private|static|void|int|function|def|return|for|while|if|else|vector|TreeNode|ListNode|dp|arr|nums)\b|[{}\[\];]|->|=>/.test(rawText) || /algorithm|complexity|sorted|binary search|pointer|tree|graph|hash/i.test(rawText);
 
   let direction = 'Explain the selected text to the student now.';
-  if (isGreeting) {
+  if (isLegal && !trusted.length) {
+    direction = 'LawBuddy has no official text for this request. Say so plainly in one or two sentences, suggest asking about a specific Article, Schedule or section, and do not answer the legal question from memory.';
+  } else if (isLegal && analysis?.direction) {
+    direction = `${analysis.direction}\n${LEGAL_CAUTIONS}`;
+  } else if (isLegal) {
+    direction = `Teach this like an Indian law tutor, grounded only in the official text inside the evidence blocks. Name the provision the way a lawyer cites it (for example, Article 21 of the Constitution of India), explain what it means in plain words, give one short realistic example, and say when its current text took effect if the evidence states it. ${LEGAL_CAUTIONS}`;
+  } else if (isGreeting) {
     direction = 'The student just greeted you. Respond with a warm, natural, spontaneous spoken greeting in 1 to 2 short sentences, inviting them to highlight any tricky code, algorithm, or technical concept.';
   } else if (isCodeOrDsa) {
     direction = 'Explain this code / DSA problem for a student listening with eyes closed: create an intuitive spatial picture of the data structures, walk through a tiny step-by-step dry run (3 to 4 elements), and explain why the logic works without dictating raw code syntax.';
@@ -130,44 +172,26 @@ export function buildTeachingUserPrompt({ text, title = '', url = '', references
 }
 
 /**
- * Optimizes text for speech synthesis:
- * - Strips raw URLs and markdown formatting symbols (*, _, #, `, [ ]).
- * - Converts bullet points and numbered lists to fluid spoken transitions.
- * - Expands common programming operators into words where helpful.
+ * Builds the user-turn prompt for a Docy follow-up question.
+ * Includes the previous explanation as context so the model can connect the dots.
+ *
+ * @param {Object} params
+ * @param {string} params.followUpQuestion  — the user's spoken question
+ * @param {string} [params.previousContext] — the last explanation Docy was giving
+ * @returns {string} userPrompt
  */
-export const shapeSpeechText = (text) => {
-  if (!text || typeof text !== 'string') return '';
+export function buildFollowUpPrompt({ followUpQuestion, previousContext = '' }) {
+  const question = (followUpQuestion || '').trim();
+  const context = (previousContext || '').trim();
 
-  let spoken = text;
+  let prompt = `Follow-up question from the student: "${question}"\n`;
 
-  // Remove URLs so they aren't read character-by-character
-  spoken = spoken.replace(/https?:\/\/\S+/gi, '');
+  if (context.length > 0) {
+    // Cap context to 800 chars — enough to anchor the topic without slowing first token
+    const cappedContext = context.length > 800 ? context.slice(0, 780) + '…' : context;
+    prompt += `\nPrevious explanation context (what you were explaining before the student interrupted):\n"${cappedContext}"\n`;
+  }
 
-  // Remove markdown headers
-  spoken = spoken.replace(/^#{1,6}\s+/gm, '');
-
-  // Remove code block markers and inline backticks
-  spoken = spoken.replace(/```[a-zA-Z]*\n?/g, '');
-  spoken = spoken.replace(/`/g, '');
-
-  // Remove bold / italics asterisks and underscores
-  spoken = spoken.replace(/\*\*([^*]+)\*\*/g, '$1');
-  spoken = spoken.replace(/\*([^*]+)\*/g, '$1');
-  spoken = spoken.replace(/__([^_]+)__/g, '$1');
-  spoken = spoken.replace(/_([^_]+)_/g, '$1');
-
-  // Remove markdown link syntax [text](url) -> text
-  spoken = spoken.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-
-  // Remove citation brackets like [1], [Source 1]
-  spoken = spoken.replace(/\[(?:Source\s*)?\d+[^\]]*\]/gi, '');
-
-  // Strip list bullets (- or *) cleanly so the narrator speaks natural prose
-  spoken = spoken.replace(/^[\*\-]\s+/gm, '');
-
-  // Collapse multiple whitespaces and excessive newlines into clean sentence spacing
-  spoken = spoken.replace(/[ \t]+/g, ' ');
-  spoken = spoken.replace(/\n\s*\n+/g, ' ');
-
-  return spoken.trim();
-};
+  prompt += '\nAnswer the follow-up question directly and warmly. Do not re-explain the previous context unless the question requires it.';
+  return prompt;
+}

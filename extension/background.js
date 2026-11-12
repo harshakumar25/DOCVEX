@@ -2,12 +2,21 @@
  * DocVex Chrome Extension — Background Service Worker
  * - Handles Command + Shift + S keyboard shortcut.
  * - Handles context menu click.
- * - Proxies requests to local backend (http://127.0.0.1:3000) to bypass webpage CSP policies.
+ * - Proxies requests to local backend (configurable port, default 3000) to bypass webpage CSP policies.
  */
 
-const BACKEND_URL = 'http://127.0.0.1:3000';
+const DEFAULT_PORT = 3000;
 const EXTENSION_ORIGIN = chrome.runtime.getURL('').replace(/\/$/, '');
 let activeStreamPort = null;
+
+/** Returns the current backend base URL, reading port from storage (cached in-flight). */
+const getBackendUrl = () =>
+  new Promise((resolve) => {
+    chrome.storage.local.get(['docvexBackendPort'], (result) => {
+      const port = result?.docvexBackendPort || DEFAULT_PORT;
+      resolve(`http://127.0.0.1:${port}`);
+    });
+  });
 
 const sendRuntimeMessage = (message) => {
   try {
@@ -98,51 +107,58 @@ chrome.commands.onCommand.addListener(async (command) => {
 // Proxy network requests from content scripts and popup to local backend
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'TEACH_REQUEST') {
-    fetch(`${BACKEND_URL}/teach`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(request.payload),
-    })
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
+    getBackendUrl().then((backendUrl) => {
+      fetch(`${backendUrl}/teach`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request.payload),
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            sendResponse({
+              success: false,
+              error: data.error || `Server error (${res.status})`,
+            });
+          } else {
+            sendResponse({
+              success: true,
+              data,
+            });
+          }
+        })
+        .catch(() => {
           sendResponse({
             success: false,
-            error: data.error || `Server error (${res.status})`,
+            error:
+              'DocVex backend is not running. Please start the local server with `npm start` in the DOCVEX directory.',
           });
-        } else {
-          sendResponse({
-            success: true,
-            data,
-          });
-        }
-      })
-      .catch(() => {
-        sendResponse({
-          success: false,
-          error:
-            'DocVex backend is not running. Please start the local server with `npm start` in the DOCVEX directory.',
         });
-      });
-
+    });
     return true; // Keep message channel open for async response
   }
 
   if (request.action === 'CHECK_HEALTH') {
-    fetch(`${BACKEND_URL}/health`)
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        sendResponse({ success: res.ok, data });
-      })
-      .catch(() => {
-        sendResponse({
-          success: false,
-          error: 'Cannot connect to DocVex backend on http://127.0.0.1:3000',
+    // Allow popup to pass an explicit port to test a different port before saving
+    const portOverride = request.port;
+    const urlPromise = portOverride
+      ? Promise.resolve(`http://127.0.0.1:${portOverride}`)
+      : getBackendUrl();
+    urlPromise.then((backendUrl) => {
+      fetch(`${backendUrl}/health`)
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          sendResponse({ success: res.ok, data });
+        })
+        .catch(() => {
+          sendResponse({
+            success: false,
+            error: `Cannot connect to DocVex backend on ${backendUrl}`,
+          });
         });
-      });
-
+    });
     return true;
   }
 });
@@ -186,8 +202,9 @@ chrome.runtime.onConnect.addListener((port) => {
         return;
       }
 
+      const backendUrl = await getBackendUrl();
       try {
-        const response = await fetch(`${BACKEND_URL}/teach`, {
+        const response = await fetch(`${backendUrl}/teach`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

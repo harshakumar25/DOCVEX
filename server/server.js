@@ -1,11 +1,60 @@
 import http from 'node:http';
 import { createReadStream, readFileSync, statSync } from 'node:fs';
+import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { getChatterboxProvider, teachPipeline, streamTeachPipeline } from './pipeline.js';
+import { DEFAULT_TRUSTED_DOMAINS } from './retrieval/trustedSources.js';
+import { listPlugins, executePlugin, setPluginEnabled } from './plugins/pluginManager.js';
+import {
+  config as legalConfig,
+  LAW_SYSTEM_PROMPT,
+  checkLegalAnswer,
+  critiqueAnswer,
+  createLawRetriever,
+  createLegalStoreLoader,
+  handleLawBuddyStaticRoute,
+  handleLawBuddyApiRoute,
+  LAWBUDDY_FILES,
+  LAWBUDDY_SECURITY_HEADERS,
+} from '@docvex/lawbuddy';
 
-// Origin security: Only allow requests from chrome-extension:// origins or non-browser clients (service worker, curl)
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+const STATIC_TEXT_ASSETS = Object.freeze({
+  '/demo': { file: 'demo.html', type: 'text/html; charset=utf-8', missing: 'Dashboard page not found.' },
+  '/demo.html': { file: 'demo.html', type: 'text/html; charset=utf-8', missing: 'Dashboard page not found.' },
+  '/': { file: 'demo.html', type: 'text/html; charset=utf-8', missing: 'Dashboard page not found.' },
+  '/dashboard': { file: 'demo.html', type: 'text/html; charset=utf-8', missing: 'Dashboard page not found.' },
+  '/manifest.webmanifest': { file: 'manifest.webmanifest', type: 'application/manifest+json; charset=utf-8', missing: 'Manifest not found.' },
+  '/sw.js': { file: 'sw.js', type: 'application/javascript; charset=utf-8', missing: 'Service worker not found.' },
+  '/assets/voiceSelector.js': { file: 'extension/voiceSelector.js', type: 'application/javascript; charset=utf-8', missing: 'Voice selector asset not found.' },
+  '/assets/speechCore.js': { file: 'extension/speechCore.js', type: 'application/javascript; charset=utf-8', missing: 'Speech core asset not found.' },
+});
+
+const serveStaticTextAsset = (req, res, pathname) => {
+  const asset = STATIC_TEXT_ASSETS[pathname];
+  if (!asset || (req.method !== 'GET' && req.method !== 'HEAD')) return false;
+  try {
+    const content = readFileSync(path.join(REPO_ROOT, asset.file), 'utf8');
+    res.writeHead(200, { 'Content-Type': asset.type });
+    if (req.method === 'HEAD') {
+      res.end();
+      return true;
+    }
+    res.end(content);
+    return true;
+  } catch {
+    sendJson(res, 404, { error: asset.missing }, req);
+    return true;
+  }
+};
+
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1', '0.0.0.0']);
+
+// Origin security: Only allow requests from chrome-extension:// origins, local dashboard origins (localhost / 127.0.0.1 / ::1), or non-browser clients (service worker, curl)
 const applyOriginSecurity = (req, res) => {
   const origin = req.headers.origin;
   if (!origin) {
@@ -17,6 +66,15 @@ const applyOriginSecurity = (req, res) => {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-DocVex-Extension-Origin, Accept');
     return true;
   }
+  try {
+    const parsedOrigin = new URL(origin);
+    if (LOCAL_HOSTNAMES.has(parsedOrigin.hostname)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-DocVex-Extension-Origin, Accept');
+      return true;
+    }
+  } catch {}
   return false;
 };
 
@@ -90,12 +148,16 @@ export const checkOllamaStatus = async (ollamaHost, targetModel) => {
 };
 
 // Validate request payload for /teach
-export const validateTeachInput = (body, maxLength = config.MAX_SELECTION_LENGTH) => {
+export const validateTeachInput = (
+  body,
+  maxLength = config.MAX_SELECTION_LENGTH,
+  defaultProvider = config.DEFAULT_PROVIDER
+) => {
   if (!body || typeof body !== 'object') {
     return { valid: false, error: 'Request body must be a JSON object.' };
   }
 
-  const { text, url, title, provider, pageContext } = body;
+  const { text, url, title, provider, pageContext, isFollowUp, followUpContext } = body;
 
   if (!text || typeof text !== 'string' || text.trim().length === 0) {
     return { valid: false, error: 'Select some text first.' };
@@ -132,7 +194,9 @@ export const validateTeachInput = (body, maxLength = config.MAX_SELECTION_LENGTH
       url: url?.trim() || '',
       title: title?.trim() || '',
       pageContext: pageContext?.trim() || '',
-      provider: provider || config.DEFAULT_PROVIDER,
+      provider: provider || defaultProvider,
+      isFollowUp: Boolean(isFollowUp),
+      followUpContext: typeof followUpContext === 'string' ? followUpContext.slice(0, 1200) : '',
     },
   };
 };
@@ -141,7 +205,12 @@ export const createServer = (options = {}) => {
   const serverConfig = { ...config, ...options };
   let activeUpstreamController = null;
 
-  return http.createServer(async (req, res) => {
+  // LawBuddy lives on its own /lawbuddy routes; /teach stays plain DocVex.
+  const legalLibrary = createLegalStoreLoader({ store: serverConfig.legalStore ?? null, dbPath: serverConfig.LEGAL_DB_PATH });
+  const lawRetriever = serverConfig.lawRetriever || createLawRetriever({ loader: legalLibrary });
+  const LIBRARY_MISSING = 'LawBuddy legal library is not installed. Import and ingest it first, e.g. npm run legal -- ingest-constitution <url>.';
+
+  const server = http.createServer(async (req, res) => {
     const isOriginAllowed = applyOriginSecurity(req, res);
 
     // Handle CORS preflight
@@ -166,6 +235,7 @@ export const createServer = (options = {}) => {
     // Health Check Endpoint
     if (req.method === 'GET' && pathname === '/health') {
       const ollama = await checkOllamaStatus(serverConfig.OLLAMA_HOST, serverConfig.OLLAMA_MODEL);
+      const chatterbox = getChatterboxProvider(serverConfig);
       return sendJson(res, 200, {
         status: 'ok',
         service: 'DocVex Local Tutor',
@@ -173,6 +243,11 @@ export const createServer = (options = {}) => {
         groq: {
           configured: Boolean(serverConfig.GROQ_API_KEY && serverConfig.GROQ_API_KEY.trim().length > 0),
           model: serverConfig.GROQ_MODEL,
+        },
+        chatterbox: {
+          enabled: Boolean(serverConfig.CHATTERBOX_ENABLED),
+          model: serverConfig.CHATTERBOX_MODEL,
+          ready: Boolean(chatterbox?.isReady?.()),
         },
         defaultProvider: serverConfig.DEFAULT_PROVIDER,
       }, req);
@@ -228,21 +303,90 @@ export const createServer = (options = {}) => {
       }
     }
 
-    // Interactive Demo Test Bench Endpoint
-    if (req.method === 'GET' && (pathname === '/demo' || pathname === '/')) {
-      try {
-        const demoPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../demo.html');
-        const html = readFileSync(demoPath, 'utf8');
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(html);
-        return;
-      } catch {
-        return sendJson(res, 404, { error: 'Demo page not found.' }, req);
-      }
+    // System Stats Endpoint
+    if (req.method === 'GET' && pathname === '/api/system/stats') {
+      const ollama = await checkOllamaStatus(serverConfig.OLLAMA_HOST, serverConfig.OLLAMA_MODEL);
+      const chatterbox = getChatterboxProvider(serverConfig);
+      return sendJson(res, 200, {
+        status: 'ok',
+        service: 'DocVex Local Tutor',
+        uptimeSeconds: Math.floor(process.uptime()),
+        nodeVersion: process.version,
+        memoryMb: Math.round(process.memoryUsage().heapUsed / (1024 * 1024)),
+        config: {
+          host: serverConfig.HOST,
+          port: serverConfig.PORT,
+          defaultProvider: serverConfig.DEFAULT_PROVIDER,
+          maxSelectionLength: serverConfig.MAX_SELECTION_LENGTH,
+          retrievalTimeoutMs: serverConfig.RETRIEVAL_TIMEOUT_MS,
+        },
+        providers: {
+          ollama,
+          groq: {
+            configured: Boolean(serverConfig.GROQ_API_KEY && serverConfig.GROQ_API_KEY.trim().length > 0),
+            model: serverConfig.GROQ_MODEL,
+          },
+          chatterbox: {
+            enabled: Boolean(serverConfig.CHATTERBOX_ENABLED),
+            model: serverConfig.CHATTERBOX_MODEL,
+            device: serverConfig.CHATTERBOX_DEVICE,
+            ready: Boolean(chatterbox?.isReady?.()),
+            tempDir: serverConfig.CHATTERBOX_TEMP_DIR,
+            sampleRate: serverConfig.CHATTERBOX_TARGET_SR,
+            cfmSteps: serverConfig.CHATTERBOX_CFM_STEPS,
+          },
+        },
+      }, req);
     }
 
-    // Teach Endpoint
-    if (req.method === 'POST' && pathname === '/teach') {
+    // Retrieval Allowlist Domains Endpoint
+    if (req.method === 'GET' && pathname === '/api/retrieval/domains') {
+      return sendJson(res, 200, {
+        domains: DEFAULT_TRUSTED_DOMAINS,
+        count: DEFAULT_TRUSTED_DOMAINS.length,
+      }, req);
+    }
+
+    // Audio Cache Purge Endpoint
+    if (req.method === 'POST' && pathname === '/api/cache/purge') {
+      const tempDir = serverConfig.CHATTERBOX_TEMP_DIR;
+      let filesPurged = 0;
+      let bytesFreed = 0;
+      try {
+        const entries = await fsPromises.readdir(tempDir);
+        for (const entry of entries) {
+          if (entry.endsWith('.wav')) {
+            const fullPath = path.join(tempDir, entry);
+            try {
+              const st = await fsPromises.stat(fullPath);
+              bytesFreed += st.size;
+              await fsPromises.unlink(fullPath);
+              filesPurged += 1;
+            } catch {}
+          }
+        }
+      } catch {
+        // Temp directory does not exist or has no wav files
+      }
+      return sendJson(res, 200, {
+        success: true,
+        filesPurged,
+        bytesFreed,
+      }, req);
+    }
+
+    // Plugins Registry Endpoint
+    if (req.method === 'GET' && pathname === '/api/plugins') {
+      const plugins = listPlugins();
+      return sendJson(res, 200, {
+        success: true,
+        plugins,
+        count: plugins.length,
+      }, req);
+    }
+
+    // Plugin Execution Endpoint
+    if (req.method === 'POST' && pathname === '/api/plugins/execute') {
       let body;
       try {
         body = await parseJsonBody(req);
@@ -250,9 +394,97 @@ export const createServer = (options = {}) => {
         return sendJson(res, 400, { error: err.message }, req);
       }
 
-      const validation = validateTeachInput(body, serverConfig.MAX_SELECTION_LENGTH);
+      const { pluginId, input } = body;
+      if (!pluginId || typeof pluginId !== 'string') {
+        return sendJson(res, 400, { error: 'Missing or invalid "pluginId" parameter.' }, req);
+      }
+
+      const result = executePlugin(pluginId, input || {});
+      const statusCode = result.success ? 200 : 400;
+      return sendJson(res, statusCode, result, req);
+    }
+
+    // Plugin Toggle Enabled Endpoint
+    if (req.method === 'POST' && pathname === '/api/plugins/toggle') {
+      let body;
+      try {
+        body = await parseJsonBody(req);
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message }, req);
+      }
+
+      const { pluginId, enabled } = body;
+      if (!pluginId || typeof pluginId !== 'string' || typeof enabled !== 'boolean') {
+        return sendJson(res, 400, { error: 'Missing "pluginId" string or "enabled" boolean.' }, req);
+      }
+
+      const updated = setPluginEnabled(pluginId, enabled);
+      if (!updated) {
+        return sendJson(res, 404, { error: `Plugin "${pluginId}" not found.` }, req);
+      }
+      return sendJson(res, 200, { success: true, plugin: updated }, req);
+    }
+
+    if (serveStaticTextAsset(req, res, pathname)) {
+      return;
+    }
+
+    // Teach Endpoint
+    // LawBuddy website pages and assets (GET /lawbuddy, GET /lawbuddy/teach, /lawbuddy/assets/*)
+    if (handleLawBuddyStaticRoute(req, res, pathname, LAWBUDDY_FILES)) {
+      return;
+    }
+
+    // LawBuddy library API: health, provisions, search and the official old↔new section tables
+    if (await handleLawBuddyApiRoute(req, res, {
+      pathname,
+      parsedUrl,
+      legalLibrary,
+      sendJson,
+      libraryMissingMessage: LIBRARY_MISSING,
+      reportOptions: serverConfig,
+    })) {
+      return;
+    }
+
+    if (req.method === 'POST' && (pathname === '/teach' || pathname === '/lawbuddy/teach' || pathname === '/advocatevox/teach')) {
+      // Same request/stream contract on both routes; POST /lawbuddy/teach or /advocatevox/teach teaches only from the legal library.
+      // LawBuddy answers fit Groq's free tier (8,000 tokens per minute): a short system prompt, a set answer
+      // allowance and low reasoning effort.
+      const routeOptions = (pathname === '/lawbuddy/teach' || pathname === '/advocatevox/teach')
+        ? {
+          mode: 'law',
+          retrieveVerifiedReferences: lawRetriever,
+          checkAnswer: checkLegalAnswer,
+          // A critique that cannot run is reported, never silently dropped: the student must know the claims
+          // were not read against the law this time.
+          critiqueAnswer: (answer, evidence) => critiqueAnswer({ answer, evidence }).catch((error) => {
+            console.warn(`[LawBuddy] critique unavailable: ${error.message}`);
+            return { unavailable: /429|rate|quota|413|too large/i.test(error.message)
+              ? 'the model\'s free quota was used up by the answer itself'
+              : 'the checking model did not respond' };
+          }),
+          systemPrompt: LAW_SYSTEM_PROMPT,
+          GROQ_MODEL: legalConfig.LEGAL_ANSWER_MODEL,
+          GROQ_MAX_TOKENS: 2600,
+          GROQ_REASONING_EFFORT: 'low',
+        }
+        : {};
+      let body;
+      try {
+        body = await parseJsonBody(req);
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message }, req);
+      }
+
+      const validation = validateTeachInput(body, serverConfig.MAX_SELECTION_LENGTH, serverConfig.DEFAULT_PROVIDER);
       if (!validation.valid) {
         return sendJson(res, 400, { error: validation.error }, req);
+      }
+      // LawBuddy answers only from the grounded stream: hybrid's background local "insights" are not
+      // grounded in the official text, so law mode runs Groq (or local Ollama when no Groq key is set).
+      if (routeOptions.mode === 'law' && validation.data.provider === 'hybrid') {
+        validation.data.provider = serverConfig.GROQ_API_KEY ? 'groq' : 'ollama';
       }
 
       // Server-side supersession: abort any ongoing upstream model inference immediately
@@ -292,7 +524,7 @@ export const createServer = (options = {}) => {
           }
         });
 
-        if (req.headers.origin && req.headers.origin.startsWith('chrome-extension://')) {
+        if (req.headers.origin && isOriginAllowed) {
           res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
         }
         res.writeHead(200, {
@@ -329,7 +561,7 @@ export const createServer = (options = {}) => {
                 res.end();
               },
               signal: currentController.signal,
-              options: serverConfig,
+              options: { ...serverConfig, isFollowUp: validation.data.isFollowUp, followUpContext: validation.data.followUpContext, ...routeOptions },
             }
           );
         } catch (err) {
@@ -349,7 +581,7 @@ export const createServer = (options = {}) => {
 
       const handler = serverConfig.teachHandler || teachPipeline;
       try {
-        const result = await handler(validation.data, { ...serverConfig, signal: currentController.signal });
+        const result = await handler(validation.data, { ...serverConfig, signal: currentController.signal, isFollowUp: validation.data.isFollowUp, followUpContext: validation.data.followUpContext, ...routeOptions });
         clearActiveController();
         return sendJson(res, 200, result, req);
       } catch (err) {
@@ -362,6 +594,9 @@ export const createServer = (options = {}) => {
     // 404 for unknown endpoints
     return sendJson(res, 404, { error: 'Not found' }, req);
   });
+
+  server.on('close', () => legalLibrary.close());
+  return server;
 };
 
 // Start the server directly if executed as main
@@ -379,5 +614,16 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   });
   server.listen(config.PORT, config.HOST, () => {
     console.log(`DocVex server listening on http://${config.HOST}:${config.PORT}`);
+    if (config.CHATTERBOX_ENABLED) {
+      const chatterbox = getChatterboxProvider(config);
+      if (chatterbox) {
+        console.log(`[DocVex] Pre-warming local Chatterbox (${config.CHATTERBOX_MODEL} on ${config.CHATTERBOX_DEVICE})…`);
+        chatterbox.start().then(() => {
+          console.log('[DocVex] Local Chatterbox ready for instant speech synthesis.');
+        }).catch((err) => {
+          console.warn('[DocVex] Chatterbox pre-warm warning:', err.message);
+        });
+      }
+    }
   });
 }

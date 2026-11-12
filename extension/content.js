@@ -16,6 +16,21 @@
   if (window.__DOCVEX_INITIALIZED__) return;
   window.__DOCVEX_INITIALIZED__ = true;
 
+  // --- Debug logging helper (gated by chrome.storage docvexDebug flag) ---
+  let _debugEnabled = false;
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    chrome.storage.local.get(['docvexDebug'], (r) => { _debugEnabled = Boolean(r?.docvexDebug); });
+  }
+  const dbg = (...args) => { if (_debugEnabled) console.log(...args); };
+  // Live-reload debug flag when user toggles it in the popup without a page reload
+  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.docvexDebug !== undefined) {
+        _debugEnabled = Boolean(changes.docvexDebug.newValue);
+      }
+    });
+  }
+
   // --- State Variables ---
   let hudContainer = null;
   let shadowRoot = null;
@@ -26,7 +41,7 @@
   let activePort = null;
   let activeUtterances = [];
   let speechKeepAliveInterval = null;
-  let chatterboxEnabled = true;
+  let chatterboxEnabled = false;
   let activeAudio = null;
   let chatterboxAudioQueue = [];
   let isChatterboxPlaying = false;
@@ -41,10 +56,20 @@
     t7: 0, // full generation finished
   };
 
-  // --- Text & Boundary Helpers ---
-  const NON_TERMINATING_ABBREVIATIONS = new Set([
-    'e.g', 'i.e', 'vs', 'etc', 'dr', 'mr', 'mrs', 'ms', 'prof', 'inc', 'ltd', 'co', 'approx', 'dept', 'fig', 'no', 'vol', 'al'
-  ]);
+  // --- Shared Speech & Voice Modules (Single Source of Truth) ---
+  let speechCore = null;
+  let voiceSelector = null;
+  const sharedModulesReady = (typeof chrome !== 'undefined' && chrome.runtime?.getURL)
+    ? Promise.all([
+        import(chrome.runtime.getURL('speechCore.js')),
+        import(chrome.runtime.getURL('voiceSelector.js')),
+      ]).then(([sc, vs]) => {
+        speechCore = sc;
+        voiceSelector = vs;
+      }).catch((err) => {
+        console.warn('[DocVex] Failed to load shared speech modules:', err);
+      })
+    : Promise.resolve();
 
   function isSafeUrl(urlString) {
     try {
@@ -52,174 +77,6 @@
       return parsed.protocol === 'http:' || parsed.protocol === 'https:';
     } catch {
       return false;
-    }
-  }
-
-  function shapeSpeechText(text) {
-    if (!text || typeof text !== 'string') return '';
-    let spoken = text;
-    // Remove raw URLs
-    spoken = spoken.replace(/https?:\/\/\S+/gi, '');
-    // Remove markdown headers
-    spoken = spoken.replace(/^#{1,6}\s+/gm, '');
-    // Remove code blocks and inline backticks
-    spoken = spoken.replace(/```[a-zA-Z]*\n?/g, '');
-    spoken = spoken.replace(/`/g, '');
-    // Remove bold / italics
-    spoken = spoken.replace(/\*\*([^*]+)\*\*/g, '$1');
-    spoken = spoken.replace(/\*([^*]+)\*/g, '$1');
-    spoken = spoken.replace(/__([^_]+)__/g, '$1');
-    spoken = spoken.replace(/_([^_]+)_/g, '$1');
-    // Remove citation formatting [Source 1], [1], [link](url)
-    spoken = spoken.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-    spoken = spoken.replace(/\[(?:Source\s*)?\d+[^\]]*\]/gi, '');
-    // Strip list bullets cleanly (same as server shapeSpeechText)
-    spoken = spoken.replace(/^[\*\-]\s+/gm, '');
-    // Normalize spaces and line breaks
-    spoken = spoken.replace(/[ \t]+/g, ' ');
-    spoken = spoken.replace(/\n\s*\n+/g, ' ');
-    return spoken.trim();
-  }
-
-  function isFalseBoundary(text, punctuationIndex) {
-    const char = text[punctuationIndex];
-
-    if (char === '.') {
-      const prevChar = text[punctuationIndex - 1];
-      const nextChar = text[punctuationIndex + 1];
-
-      // Decimal number (e.g. 3.14) or version (e.g. 1.2)
-      if (/\d/.test(prevChar) && /\d/.test(nextChar)) {
-        return true;
-      }
-
-      // Ellipsis (...)
-      if (prevChar === '.' || nextChar === '.') {
-        return true;
-      }
-
-      // URL or domain suffix
-      const surrounding = text.slice(Math.max(0, punctuationIndex - 15), Math.min(text.length, punctuationIndex + 15));
-      if (/https?:\/\/|\.com|\.org|\.net|\.io|\.edu|\.gov/i.test(surrounding)) {
-        return true;
-      }
-
-      // Preceding abbreviation word
-      const preceding = text.slice(Math.max(0, punctuationIndex - 10), punctuationIndex);
-      const lastWordMatch = preceding.match(/([a-zA-Z0-9\._]+)$/);
-      if (lastWordMatch) {
-        const candidate = lastWordMatch[1].toLowerCase().replace(/\.$/, '');
-        if (NON_TERMINATING_ABBREVIATIONS.has(candidate)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
-
-  // Classify the gap after a sentence split: paragraph break = 1000ms, normal = 0ms
-  function classifyPause(text, punctEndIndex) {
-    const remainder = text.slice(punctEndIndex);
-    if (/^\s*\n\s*\n/.test(remainder)) return 1000;
-    return 0;
-  }
-
-  // --- SentenceBuffer Class ---
-  class ClientSentenceBuffer {
-    constructor({ onSentence, minSentenceLength = 4, maxUtteranceLength = 360 }) {
-      this.buffer = '';
-      this.onSentence = onSentence;
-      this.minSentenceLength = minSentenceLength;
-      this.maxUtteranceLength = maxUtteranceLength;
-      this.sentenceIndex = 0;
-    }
-
-    addToken(token) {
-      if (!token || typeof token !== 'string') return;
-      this.buffer += token;
-      this.process();
-    }
-
-    emitClamped(candidate, pauseAfterMs = 0) {
-      const cleaned = shapeSpeechText(candidate);
-      if (!cleaned || cleaned.length < this.minSentenceLength) return;
-
-      if (cleaned.length <= this.maxUtteranceLength) {
-        this.sentenceIndex++;
-        this.onSentence(cleaned, this.sentenceIndex, pauseAfterMs);
-        return;
-      }
-
-      let remaining = cleaned;
-      while (remaining.length > this.maxUtteranceLength) {
-        const slice = remaining.slice(0, this.maxUtteranceLength);
-        const match = slice.match(/.*([,;:—]|\s-\s)\s*/);
-        let splitAt = -1;
-        if (match && match[0].length >= this.minSentenceLength) {
-          splitAt = match[0].length;
-        } else {
-          splitAt = slice.lastIndexOf(' ');
-        }
-
-        if (splitAt <= 0 || splitAt < this.minSentenceLength) {
-          splitAt = this.maxUtteranceLength;
-        }
-
-        const part = remaining.slice(0, splitAt).trim();
-        if (part.length > 0) {
-          this.sentenceIndex++;
-          this.onSentence(part, this.sentenceIndex, 0);
-        }
-        remaining = remaining.slice(splitAt).trim();
-      }
-
-      if (remaining.length >= this.minSentenceLength) {
-        this.sentenceIndex++;
-        this.onSentence(remaining, this.sentenceIndex, pauseAfterMs);
-      }
-    }
-
-    process() {
-      const boundaryRegex = /([.?!]+)(\s+|\n+|$)/g;
-      let match;
-
-      while ((match = boundaryRegex.exec(this.buffer)) !== null) {
-        const punctIndex = match.index;
-        const punctLength = match[1].length;
-        const spaceLength = match[2].length;
-        const splitIndex = punctIndex + punctLength + spaceLength;
-
-        if (splitIndex >= this.buffer.length && spaceLength === 0) {
-          break;
-        }
-
-        if (isFalseBoundary(this.buffer, punctIndex)) {
-          continue;
-        }
-
-        const candidate = this.buffer.slice(0, splitIndex).trim();
-
-        if (candidate.length >= this.minSentenceLength) {
-          const pauseAfterMs = classifyPause(this.buffer, punctIndex + punctLength);
-          this.emitClamped(candidate, pauseAfterMs);
-          this.buffer = this.buffer.slice(splitIndex);
-          boundaryRegex.lastIndex = 0;
-        }
-      }
-    }
-
-    flush() {
-      const remaining = this.buffer.trim();
-      if (remaining.length > 0) {
-        this.emitClamped(remaining);
-      }
-      this.buffer = '';
-    }
-
-    reset() {
-      this.buffer = '';
-      this.sentenceIndex = 0;
     }
   }
 
@@ -241,20 +98,44 @@
       this.analyser = null;
       this.vadInterval = null;
       this.hasMicPermission = false;
-      this.recognitionWorking = false;
+      this.lastSttResultTime = 0;
+      this._pendingMicPromise = null;
+      this._sttPermissionDenied = false;
     }
 
-    // Regex patterns that trigger a pause
+    // Regex patterns that trigger an immediate pause
     static WAKE = [
+      // Direct Docy address
       /\b(docy|doci|docvex|dokey|dhoki)\b/i,
-      /\b(ru+k+|roo?k+)\s*(ja+[ao]*|o+|ha)?\b/i, // "ruk jao", "ruk jaao", "rukk jaoo", "ruko", "rooko"
-      /\bek\s*(sec|second|pal|minute|min)\b/i,
-      /\b(wait|waitt)(\s+(for\s+)?(a\s+)?(moment|sec|second|minute))?\b/i, // "wait", "wait for moment", "wait for a moment"
-      /\bpause\b/i,
-      /\bhold\s*on\b/i,
-      /\bstop\b/i,
-      /\b(i\s*have\s*a\s*)?doubt\b/i,
-      /\bsuno\b/i,
+      // Hindi/Hinglish stop commands: ruk, ruko, ruk ja, ruk jao, ruk ja bhai, ruk ja bhyii, ruk ja yaar, rukh
+      /\b(ru+k+|roo?k+|ru+kh?)\s*(ja+[ao]*|o+|ha)?(\s*(bha?y+i+|bha?i|bhaiya|yaar|yar|re|na|zara|ji))?\b/i,
+      // Devanagari Hindi stop commands: रुक, रुको, रुक जा, रुक जाओ, रुकिए, रुक जा भाई, रुक जा यार
+      /(रुक(ना|ो|िए)?(\s*(जा+[ओो]*|जाइए))?(\s*(भाई|यार|रे|ना|ज़रा|जरा))?)/,
+      // Hindi silence/stop commands: chup, chup ho ja, chup karo, shant, shant ho ja
+      /\b(chup(\s*(ho\s*ja|karo|raho))?|shant(\s*(ho\s*ja|raho))?)\b/i,
+      // Devanagari silence: चुप, चुप हो जा, चुप रहो, शांत
+      /(चुप(\s*(हो\s*जा|रहो|करो))?|शांत(\s*(हो\s*जा|रहो))?)/,
+      // Hindi attention commands: sun, suno, sun bhai, sun bhyii, arey sun, arey suno, sun na, sun lo, sun rahe ho, sun rha h
+      /\b(suno?|arey?\s*suno?|sun\s*(rahe?\s*ho|raha\s*hai|rha\s*h|bha?y+i+|bha?i|na|yaar|yar|lo|be)?|bha?i\s*sun)\b/i,
+      // Devanagari attention: सुन, सुनो, सुनिए, अरे सुनो, भाई सुन, सुन रहे हो
+      /(सुन(ना|ो|िए| रहे हो| रहा है)?|अरे\s*सुन(ना|ो|िए)?|भाई\s*सुन(ना|ो|िए)?)/,
+      // English wait variations: wait, waitt, wait a sec, wait a second, wait for a moment, ok wait, okk wait, okay wait
+      /\b(ok+|okay)?\s*(wait|waitt|weight)(\s+(for\s+)?(a\s+)?(moment|sec|second|minute))?\b/i,
+      // English listen / hey: listen, hey docy, docy listen, listen docy, just listen, hey wait, are you listening, listening, can you hear me
+      /\b(listen|listening|are\s+you\s+listening|can\s+you\s+hear\s+me|hey\s+docy|docy\s+listen|listen\s+docy|just\s+listen|hey\s+wait)\b/i,
+      // Greetings and addressing Docy: hello docy, hello, hi docy, hi
+      /\b(hello(\s+docy)?|hi\s+docy)\b/i,
+      // English pause / stop / hold commands
+      /\b(pause|stop|hold\s*on|hold\s*up|hang\s*on|shut\s*up|be\s*quiet)\b/i,
+      // Devanagari pause/stop: रुको जरा, ठहरो
+      /(रुको\s*ज़रा|रुको\s*जरा|ठहरो)/,
+      // Short-time expressions: ek sec, ek second, ek minute, ek min, 1 sec, 1 min, just a sec
+      /\b((ek|1|one)\s*(sec|second|pal|minute|min))\b/i,
+      /(एक\s*(सेकंड|मिनट|पल)|१\s*(सेकंड|मिनट))/i,
+      /\b(just\s*a\s*(sec|second|minute|moment))\b/i,
+      // Student doubt: doubt, i have a doubt, ek doubt
+      /\b((i\s*have\s*a|ek)\s*)?doubt\b/i,
+      /(डाउट|संदेह|सवाल|प्रश्न)/,
     ];
 
     // Regex patterns that resume after a pause
@@ -264,7 +145,9 @@
       /\bjaari\b/i,
       /\btheek\s*hai\b/i,
       /\bhaan\b/i,
-      /\b(ok|okay|got\s*it|fine|chalo)\b/i,
+      /\b(ok|okay|got\s*it|fine|chalo|aage\s*badho|shuru\s*karo)\b/i,
+      // Devanagari resume phrases
+      /(जारी(\s*रखो)?|चलते\s*रहो|ठीक\s*है|हाँ|आगे\s*बढ़ो|शुरू\s*करो|चलो)/,
     ];
 
     setCurrentSpeakingText(text) {
@@ -275,10 +158,10 @@
       if (!this.currentSpeakingText) return false;
       const lower = transcript.toLowerCase().trim();
       // If the user explicitly addressed Docy or used clear Hindi/distinct wake words, it's not echo
-      if (/\b(docy|doci|docvex|dokey|dhoki|ruk|ruko|doubt|suno)\b/i.test(lower)) {
+      if (/\b(docy|doci|docvex|dokey|dhoki|ruk|ruko|doubt|suno?|sun\b|listen|listening|hello|hi|chup|hold|bhai)\b/i.test(lower) || /[\u0900-\u097F]/.test(lower)) {
         return false;
       }
-      // If it's a bare generic word ("wait", "stop", "pause") that literally appears in the sentence DocVex is uttering:
+      // If it's a bare isolated word ("wait", "stop", "pause") that literally appears in the sentence DocVex is uttering:
       if (/^(wait|stop|pause)$/i.test(lower) && this.currentSpeakingText.includes(lower)) {
         return true;
       }
@@ -287,21 +170,44 @@
 
     async ensureMicAccess() {
       if (this.hasMicPermission && this.micStream?.active) return true;
-      try {
-        console.log('[Docy Voice] Requesting microphone access via getUserMedia...');
-        this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        this.hasMicPermission = true;
-        console.log('[Docy Voice] Microphone access granted! 🎙️');
-        this._updateMicButton(true);
-        this._initVAD(this.micStream);
-        return true;
-      } catch (err) {
-        console.warn('[Docy Voice] Microphone permission denied or unavailable:', err.message);
-        this.hasMicPermission = false;
-        this._updateMicButton(false);
-        updateHUDStatus('🎙️ Click "🎙️ Enable Mic" to allow Docy voice commands');
-        return false;
-      }
+      if (this._pendingMicPromise) return this._pendingMicPromise;
+
+      this._pendingMicPromise = (async () => {
+        try {
+          console.log('[Docy Voice] Requesting microphone access with echo cancellation...');
+          const streamPromise = navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          });
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Mic permission request timed out')), 25000)
+          );
+          this.micStream = await Promise.race([streamPromise, timeoutPromise]);
+          this.hasMicPermission = true;
+          this._sttPermissionDenied = false;
+          console.log('[Docy Voice] Microphone access granted! 🎙️');
+          // Persist mic permission so popup and future loads reflect it
+          if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+            chrome.storage.local.set({ docvexMicEnabled: true });
+          }
+          this._updateMicButton(true);
+          this._initVAD(this.micStream);
+          return true;
+        } catch (err) {
+          console.warn('[Docy Voice] Microphone permission denied or unavailable:', err.message);
+          this.hasMicPermission = false;
+          this._updateMicButton(false);
+          updateHUDStatus('🎙️ Click "🎙️ Enable Mic" to allow Docy voice commands');
+          return false;
+        }
+      })().finally(() => {
+        this._pendingMicPromise = null;
+      });
+
+      return this._pendingMicPromise;
     }
 
     async toggleMicAccess() {
@@ -309,10 +215,18 @@
         const ok = await this.ensureMicAccess();
         if (ok) {
           updateHUDStatus('🎙️ Docy voice listener active!');
-          if (isSpeaking) this.start();
+          this.start(true);
         }
       } else {
-        updateHUDStatus('🎙️ Docy voice listener is active.');
+        if (this.active) {
+          this.stop(false);
+          updateHUDStatus('🎙️ Docy voice listener paused.');
+          this._updateMicButton(false);
+        } else {
+          this.start(true);
+          updateHUDStatus('🎙️ Docy is listening…');
+          this._updateMicButton(true);
+        }
       }
     }
 
@@ -352,18 +266,20 @@
 
       this.vadInterval = setInterval(() => {
         // VAD only acts as interrupt when DocVex is actively speaking and not already paused
-        if (!this.active || this.interrupted || !isSpeaking || isPaused) {
+        if (!this.active || this.interrupted || (!isSpeaking && !isClientSpeechPlaying) || isPaused) {
           consecutiveSpikes = 0;
           return;
         }
 
-        // If SpeechRecognition is actively providing transcripts, prefer STT over raw VAD
-        if (this.recognitionWorking) return;
+        // Only suppress VAD if SpeechRecognition is actively providing live transcripts right now
+        // (if STT is silent, delayed, or stripped in Brave, VAD acts as instant fail-safe)
+        const sttRecentlyActive = (Date.now() - this.lastSttResultTime) < 1500;
+        if (sttRecentlyActive) return;
 
         if (!this.analyser) return;
         this.analyser.getByteFrequencyData(dataArray);
 
-        // Calculate average energy in voice spectrum (bins 2 to 40 roughly 150Hz - 3500Hz)
+        // Calculate average energy in voice spectrum (bins 2 to 45 roughly 150Hz - 3500Hz)
         let sum = 0;
         const startBin = 2;
         const endBin = Math.min(45, dataArray.length);
@@ -372,11 +288,11 @@
         }
         const avg = sum / (endBin - startBin);
 
-        // Threshold for intentional speech into microphone (ignore background noise < 38)
-        if (avg > 38) {
+        // Threshold for intentional speech into microphone (conversational level > 16)
+        if (avg > 16) {
           consecutiveSpikes++;
           if (consecutiveSpikes >= 2) { // sustained for ~160ms
-            console.log('[Docy VAD] Voice activity detected via microphone (level:', Math.round(avg), '). Pausing DocVex.');
+            dbg('[Docy VAD] Voice activity detected via microphone (level:', Math.round(avg), '). Pausing DocVex.');
             consecutiveSpikes = 0;
             this._wake('voice activity');
           }
@@ -402,51 +318,82 @@
 
         this.recognition.onstart = () => {
           console.log('[Docy Voice] SpeechRecognition started successfully.');
-          this.recognitionWorking = true;
         };
 
         this.recognition.onresult = (event) => {
-          this.recognitionWorking = true;
+          this.lastSttResultTime = Date.now();
           const last = event.results[event.results.length - 1];
           const transcript = (last[0].transcript || '').trim();
           if (!transcript) return;
-          console.log('[Docy Voice Heard]', transcript);
 
+          // Always track lastSpokenText for HUD display
+          if (this.interrupted) {
+            this.lastSpokenText = transcript;
+          }
+
+          // Case 1: DocVex is currently speaking -> INSTANT INTERRUPT!
+          // We evaluate wake words immediately on interim AND final results so interrupt is instant (<100ms)
+          // without waiting for Chrome silence boundary (which never arrives while speakers are active)
           if (!this.interrupted) {
             if (this._isSelfEcho(transcript)) return;
             if (DocyVoiceInterrupt.WAKE.some((p) => p.test(transcript))) {
-              console.log('[Docy Voice] Wake trigger matched in:', transcript);
+              console.log('[Docy Voice] Instant Wake trigger matched in:', transcript);
               this._wake(transcript);
+              return;
             }
           } else {
-            // If the user gave an explicit resume command
+            // Case 2: DocVex is ALREADY paused (interrupted == true)
+            // A) Check for explicit resume trigger (interim or final)
             if (DocyVoiceInterrupt.RESUME.some((p) => p.test(transcript))) {
               console.log('[Docy Voice] Resume trigger matched in:', transcript);
               this._resume();
               return;
             }
 
-            // User is speaking a question, thought, or doubt while paused!
-            this.lastSpokenText = transcript;
+            // B) User speaking a question or doubt while paused:
+            // Update HUD preview live on interim results
             const preview = transcript.length > 36 ? transcript.slice(0, 33) + '…' : transcript;
-            this._startCountdown(6, preview);
+            this._updateListeningHUD(preview);
+
+            // ONLY fire follow-up question when transcript is FINAL
+            // to avoid sending half-spoken questions (e.g. "What is" before student finishes sentence)
+            if (last.isFinal) {
+              dbg('[Docy Voice Heard (final)]', transcript);
+              if (this._looksLikeQuestion(transcript)) {
+                this._askFollowUp(transcript);
+              } else {
+                this._startCountdown(6, preview);
+              }
+            }
           }
         };
 
         this.recognition.onend = () => {
-          if (this.active && !this.interrupted) {
-            try { this.recognition.start(); } catch { /* already starting */ }
-          }
+          // Keep recognition alive as long as docyInterrupt is active (whether speaking OR interrupted/listening)
+          if (!this.active || this._sttPermissionDenied) return;
+          // Chrome needs a small tick to release the previous session before restarting
+          setTimeout(() => {
+            if (this.active && !this._sttPermissionDenied) {
+              try {
+                this.recognition.start();
+              } catch {
+                setTimeout(() => {
+                  if (this.active && !this._sttPermissionDenied) {
+                    try { this.recognition.start(); } catch {}
+                  }
+                }, 150);
+              }
+            }
+          }, 50);
         };
 
         this.recognition.onerror = (e) => {
           console.warn('[Docy Voice Recognition Event]', e.error);
           if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-            this.recognitionWorking = false;
+            this._sttPermissionDenied = true;
             updateHUDStatus('🎙️ Allow microphone for Docy voice commands');
           } else if (e.error === 'network') {
             // Typical in Brave where Google STT cloud server is stripped
-            this.recognitionWorking = false;
             console.log('[Docy Voice] Cloud STT offline/blocked; Web Audio VAD fallback active.');
           }
         };
@@ -458,22 +405,32 @@
       }
     }
 
-    /** Start continuous listening. Call when DocVex begins speaking. */
-    async start() {
-      if (this.active) return;
+    /** Start continuous listening immediately. Call when DocVex begins speaking or mic is toggled. */
+    start(force = false) {
+      if (this.active && !force) return;
       this.active = true;
       console.log('[Docy Voice] Starting Docy voice listener...');
 
-      // 1. Ensure microphone access is active
-      await this.ensureMicAccess();
+      if (force) {
+        this._sttPermissionDenied = false;
+      }
 
-      // 2. Start SpeechRecognition if available
+      // 1. Start SpeechRecognition IMMEDIATELY without waiting for getUserMedia
       if (!this.recognition) this.init();
-      if (this.recognition) {
+      if (this.recognition && !this._sttPermissionDenied) {
         try {
           this.recognition.start();
-        } catch { /* already running */ }
+        } catch { /* already running or starting */ }
       }
+
+      // 2. Ensure microphone access concurrently in background for VAD fallback
+      const micWasAlreadyActive = this.hasMicPermission && this.micStream?.active;
+      if (micWasAlreadyActive && this.analyser) {
+        this._startVADMonitoring();
+      } else {
+        this.ensureMicAccess().catch(() => {});
+      }
+      this._updateMicButton(true);
     }
 
     /** Stop recognition completely. Call when DocVex finishes / is stopped. */
@@ -504,6 +461,36 @@
     /** Resume if currently interrupted (called by manual resume button too). */
     forceResume() {
       if (this.interrupted) this._resume();
+    }
+
+    /** Returns true if transcript looks like a standalone question worth answering. */
+    _looksLikeQuestion(transcript) {
+      const t = transcript.trim();
+      if (t.length < 6) return false;
+      // Explicit question markers
+      if (/[?]/.test(t)) return true;
+      if (/^(what|why|how|when|where|who|which|can you|could you|explain|tell me|is there|are there|difference between|what is|what are)/i.test(t)) return true;
+      // Hindi question starters
+      if (/^(kya|kyun|kaise|kaun|batao|samjhao|explain karo)/i.test(t)) return true;
+      return false;
+    }
+
+    /**
+     * Convert the user's spoken follow-up question into a new teaching session.
+     * Passes the current explanation as context so the server uses the warm
+     * follow-up tone and can connect the dots without starting cold.
+     */
+    _askFollowUp(transcript) {
+      const question = transcript.trim();
+      if (!question) return;
+      this.interrupted = false;
+      this.lastSpokenText = '';
+      this._clearTimers();
+      updateHUDStatus(`\uD83C\uDF99\uFE0F Got it! Answering: "${question.slice(0, 40)}${question.length > 40 ? '\u2026' : ''}"`);
+      // Small delay so user sees the status message
+      setTimeout(() => {
+        triggerTeaching(question, { isFollowUp: true, followUpContext: currentSpeechText });
+      }, 400);
     }
 
     _wake(triggerTranscript = '') {
@@ -569,6 +556,19 @@
 
   const docyInterrupt = new DocyVoiceInterrupt();
 
+  // Proactively check stored mic preference or browser permission on script startup
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    chrome.storage.local.get(['docvexMicEnabled'], (res) => {
+      if (res?.docvexMicEnabled && navigator.permissions?.query) {
+        navigator.permissions.query({ name: 'microphone' }).then((status) => {
+          if (status.state === 'granted') {
+            docyInterrupt.ensureMicAccess().catch(() => {});
+          }
+        }).catch(() => {});
+      }
+    });
+  }
+
 
   // --- HUD DOM Management ---
   function getOrCreateHUD() {
@@ -599,11 +599,11 @@
       .hud-card {
         width: 360px;
         max-width: calc(100vw - 48px);
-        background: #0f172a;
-        color: #f8fafc;
-        border: 1px solid #334155;
+        background: #000000;
+        color: #ffffff;
+        border: 1px solid rgba(44, 52, 128, 0.5);
         border-radius: 16px;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 20px 30px -5px rgba(0, 0, 0, 0.8), 0 0 24px rgba(44, 52, 128, 0.25);
         padding: 16px;
         font-size: 14px;
         line-height: 1.5;
@@ -620,7 +620,7 @@
         justify-content: space-between;
         margin-bottom: 12px;
         padding-bottom: 10px;
-        border-bottom: 1px solid #1e293b;
+        border-bottom: 1px solid rgba(44, 52, 128, 0.3);
       }
       .hud-title {
         display: flex;
@@ -628,16 +628,16 @@
         gap: 8px;
         font-weight: 700;
         font-size: 15px;
-        color: #e2e8f0;
+        color: #ffffff;
       }
       .hud-badge {
         font-size: 11px;
         font-weight: 600;
         padding: 2px 8px;
         border-radius: 9999px;
-        background: #1e1b4b;
-        color: #818cf8;
-        border: 1px solid #3730a3;
+        background: #2C3480;
+        color: #ffffff;
+        border: 1px solid #5d6eff;
       }
       .hud-close {
         background: transparent;
@@ -693,7 +693,7 @@
       }
       .eq-bar {
         width: 3px;
-        background: #38bdf8;
+        background: #2C3480;
         border-radius: 2px;
         animation: docvex-eq 0.8s ease-in-out infinite alternate;
       }
@@ -707,7 +707,7 @@
       .hud-content {
         max-height: 240px;
         overflow-y: auto;
-        color: #e2e8f0;
+        color: #ffffff;
         font-size: 13.5px;
         margin-bottom: 14px;
         white-space: pre-wrap;
@@ -718,7 +718,7 @@
         width: 4px;
       }
       .hud-content::-webkit-scrollbar-thumb {
-        background: #475569;
+        background: #2C3480;
         border-radius: 4px;
       }
       .hud-controls {
@@ -741,11 +741,12 @@
         transition: background 0.15s ease;
       }
       .btn-primary {
-        background: #4f46e5;
+        background: #2C3480;
         color: #ffffff;
+        border: 1px solid #5d6eff;
       }
       .btn-primary:hover {
-        background: #4338ca;
+        background: #3b45a6;
       }
       .btn-danger {
         background: #7f1d1d;
@@ -756,29 +757,29 @@
         background: #991b1b;
       }
       .btn-secondary {
-        background: #1e293b;
-        color: #cbd5e1;
-        border: 1px solid #334155;
+        background: #080c18;
+        color: #e2e8f0;
+        border: 1px solid rgba(44, 52, 128, 0.4);
       }
       .btn-secondary:hover {
-        background: #334155;
+        background: #141b33;
         color: #ffffff;
       }
       .btn-secondary.active {
-        background: #064e3b;
-        color: #34d399;
-        border-color: #059669;
+        background: #2C3480;
+        color: #ffffff;
+        border-color: #5d6eff;
       }
       .sources-list {
         margin-top: 10px;
         padding-top: 8px;
-        border-top: 1px solid #1e293b;
+        border-top: 1px solid rgba(44, 52, 128, 0.25);
         font-size: 11.5px;
         color: #94a3b8;
       }
       .source-link {
         display: inline-block;
-        color: #38bdf8;
+        color: #7b8bff;
         text-decoration: none;
         margin-right: 8px;
         margin-top: 4px;
@@ -798,13 +799,13 @@
       .insights-container {
         margin-top: 12px;
         padding-top: 10px;
-        border-top: 1px solid #334155;
+        border-top: 1px solid rgba(44, 52, 128, 0.3);
       }
       .insights-shimmer {
         font-size: 11.5px;
-        color: #818cf8;
-        background: rgba(99, 102, 241, 0.1);
-        border: 1px dashed rgba(99, 102, 241, 0.35);
+        color: #7b8bff;
+        background: rgba(44, 52, 128, 0.15);
+        border: 1px dashed rgba(44, 52, 128, 0.5);
         border-radius: 8px;
         padding: 8px 10px;
         display: flex;
@@ -817,13 +818,13 @@
         50% { opacity: 1; }
       }
       .insights-card {
-        background: #090d16;
-        border: 1px solid #3b82f6;
+        background: #000000;
+        border: 1px solid #2C3480;
         border-radius: 8px;
         padding: 10px 12px;
         font-size: 12px;
         line-height: 1.5;
-        color: #e2e8f0;
+        color: #ffffff;
       }
       .insights-header {
         display: flex;
@@ -936,12 +937,12 @@
     titleDiv.className = 'hud-title';
 
     const titleIcon = document.createElement('span');
-    titleIcon.textContent = '🎓 DocVex';
+    titleIcon.textContent = 'DocVex';
 
     const titleBadge = document.createElement('span');
     titleBadge.id = 'docvex-title-badge';
     titleBadge.className = 'hud-badge';
-    titleBadge.textContent = 'Local Tutor';
+    titleBadge.textContent = 'Read & Explain';
 
     titleDiv.appendChild(titleIcon);
     titleDiv.appendChild(titleBadge);
@@ -1136,52 +1137,6 @@
     sourcesDiv.style.display = 'block';
   }
 
-  // Filter out harsh, robotic novelty voices and female voices to ensure a male technical narrator voice
-  const NOVELTY_OR_ROBOTIC_VOICE_NAMES = new Set([
-    'albert', 'bad news', 'bahh', 'bells', 'boing', 'bubbles',
-    'cellos', 'deranged', 'good news', 'hysterical', 'jester',
-    'organ', 'superstar', 'trinoids', 'whisper', 'wobble', 'zarvox', 'junior', 'ralph',
-    'fred', 'grandpa'
-  ]);
-
-  const FEMALE_VOICE_NAMES = new Set([
-    'samantha', 'ava', 'serena', 'karen', 'moira', 'tessa', 'victoria', 'fiona',
-    'allison', 'susan', 'veena', 'yuri', 'kyoko', 'amelie', 'anna', 'carmit',
-    'damayanti', 'ellen', 'ioana', 'joana', 'kanya', 'katya', 'luciana', 'mariska',
-    'meijia', 'melina', 'milena', 'monica', 'nora', 'paulina', 'satu', 'sinji',
-    'tingting', 'yelda', 'yuna', 'zosia', 'zuzana', 'flo', 'grandma', 'kathy',
-    'sandy', 'shelley', 'tara', 'alice', 'alva', 'amira', 'daria', 'female'
-  ]);
-
-  const PREFERRED_MALE_VOICE_NAMES = [
-    'daniel', 'oliver', 'rishi', 'eddy', 'reed', 'rocko', 'aman', 'aaron', 'george', 'alex', 'arthur', 'tom',
-    'male', 'natural', 'neural', 'premium', 'enhanced', 'google'
-  ];
-
-  function selectBestSpeechVoice(voices) {
-    if (!voices || voices.length === 0) return null;
-    const nonFemaleVoices = voices.filter((v) => {
-      const lowerName = (v.name || '').toLowerCase();
-      const isRobotic = Array.from(NOVELTY_OR_ROBOTIC_VOICE_NAMES).some((bad) => lowerName === bad || lowerName.includes(bad));
-      const isFemale = Array.from(FEMALE_VOICE_NAMES).some((fem) => lowerName === fem || lowerName.startsWith(`${fem} `) || lowerName.includes(` ${fem}`));
-      return !isRobotic && !isFemale;
-    });
-
-    const candidatePool = nonFemaleVoices.length > 0 ? nonFemaleVoices : voices.filter((v) => {
-      const lowerName = (v.name || '').toLowerCase();
-      return !Array.from(FEMALE_VOICE_NAMES).some((fem) => lowerName === fem || lowerName.includes(fem));
-    });
-
-    const englishVoices = candidatePool.filter((v) => v.lang && v.lang.startsWith('en'));
-    const searchPool = englishVoices.length > 0 ? englishVoices : candidatePool;
-
-    for (const preferred of PREFERRED_MALE_VOICE_NAMES) {
-      const match = searchPool.find((v) => (v.name || '').toLowerCase().includes(preferred));
-      if (match) return match;
-    }
-    return searchPool[0] || null;
-  }
-
   let cachedVoices = [];
   function updateVoices() {
     if ('speechSynthesis' in window) {
@@ -1197,42 +1152,62 @@
   }
 
   // --- Speech Queue & Playback Engine ---
+  let clientSpeechQueue = [];
+  let isClientSpeechPlaying = false;
+  let currentSpeakingItem = null;
+
   function queueSpeechSentence(sentence, index, requestId) {
     if (!sentence || !('speechSynthesis' in window)) return;
     if (requestId !== activeRequestId) return; // Discard stale requests
 
-    const utterance = new SpeechSynthesisUtterance(sentence);
+    clientSpeechQueue.push({ sentence, index, requestId });
+    if (!isClientSpeechPlaying && !isPaused) {
+      playNextSpeechSentence();
+    }
+  }
+
+  function playNextSpeechSentence() {
+    if (isPaused || isClientSpeechPlaying || clientSpeechQueue.length === 0) return;
+    const item = clientSpeechQueue.shift();
+    if (!item || item.requestId !== activeRequestId) {
+      playNextSpeechSentence();
+      return;
+    }
+
+    currentSpeakingItem = item;
+    const utterance = new SpeechSynthesisUtterance(item.sentence);
     utterance.rate = 0.97;
     utterance.pitch = 1.0;
 
     const voices = cachedVoices.length > 0 ? cachedVoices : window.speechSynthesis.getVoices();
-    const naturalVoice = selectBestSpeechVoice(voices);
+    const naturalVoice = voiceSelector ? voiceSelector.selectBestSpeechVoice(voices) : null;
     if (naturalVoice) {
       utterance.voice = naturalVoice;
     }
 
     utterance.onstart = () => {
-      if (requestId !== activeRequestId) {
+      if (item.requestId !== activeRequestId) {
         window.speechSynthesis.cancel();
         return;
       }
 
-      if (index === 1 && timingMetrics.t6 === 0) {
+      if (item.index === 1 && timingMetrics.t6 === 0) {
         timingMetrics.t6 = performance.now();
         const latency = Math.round(timingMetrics.t6 - timingMetrics.t0);
         console.log(`[DocVex Timing] First Audible Speech (T0->T6): ${latency}ms`);
       }
 
+      isClientSpeechPlaying = true;
       isSpeaking = true;
       isPaused = false;
       updatePlayButtonState();
       updateHUDStatus('🔊 Speaking explanation…');
-      docyInterrupt.setCurrentSpeakingText(sentence);
+      docyInterrupt.setCurrentSpeakingText(item.sentence);
       docyInterrupt.start();
 
       if (!speechKeepAliveInterval) {
         speechKeepAliveInterval = setInterval(() => {
-          if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+          if (window.speechSynthesis.speaking && !window.speechSynthesis.paused && !isPaused) {
             window.speechSynthesis.pause();
             window.speechSynthesis.resume();
           }
@@ -1240,22 +1215,35 @@
       }
     };
 
-    utterance.onend = () => {
+    const finish = () => {
+      isClientSpeechPlaying = false;
       const idx = activeUtterances.indexOf(utterance);
       if (idx !== -1) {
         activeUtterances.splice(idx, 1);
       }
 
-      if (activeUtterances.length === 0 && !window.speechSynthesis.speaking) {
-        isSpeaking = false;
-        isPaused = false;
-        clearInterval(speechKeepAliveInterval);
-        speechKeepAliveInterval = null;
-        docyInterrupt.setCurrentSpeakingText('');
-        docyInterrupt.stop();
-        updatePlayButtonState();
-        updateHUDStatus('Finished speaking.');
+      if (item.requestId === activeRequestId) {
+        if (clientSpeechQueue.length > 0) {
+          playNextSpeechSentence();
+        } else {
+          isSpeaking = false;
+          isPaused = false;
+          currentSpeakingItem = null;
+          clearInterval(speechKeepAliveInterval);
+          speechKeepAliveInterval = null;
+          docyInterrupt.setCurrentSpeakingText('');
+          updatePlayButtonState();
+          updateHUDStatus('Finished speaking. Docy is listening for questions…');
+          if (!docyInterrupt.hasMicPermission) {
+            docyInterrupt.stop();
+          }
+        }
       }
+    };
+
+    utterance.onend = () => {
+      if (isPaused) return;
+      finish();
     };
 
     utterance.onerror = (e) => {
@@ -1266,15 +1254,8 @@
       if (e.error !== 'canceled' && e.error !== 'interrupted') {
         console.warn('SpeechSynthesis error:', e.error);
       }
-      if (activeUtterances.length === 0 && !window.speechSynthesis.speaking) {
-        isSpeaking = false;
-        isPaused = false;
-        clearInterval(speechKeepAliveInterval);
-        speechKeepAliveInterval = null;
-        docyInterrupt.setCurrentSpeakingText('');
-        docyInterrupt.stop();
-        updatePlayButtonState();
-      }
+      if (isPaused) return;
+      finish();
     };
 
     // Retain in memory to prevent Chrome utterance GC bug
@@ -1364,52 +1345,62 @@
   }
 
   function pauseSpeech() {
-    if (chatterboxEnabled && activePort) {
-      activePort.postMessage({ action: 'PAUSE_AUDIO' });
-      isPaused = true;
-      updatePlayButtonState();
-      updateHUDStatus('⏸ Audio paused');
-      return;
+    isPaused = true;
+
+    // 1. Offscreen Chatterbox path
+    if (activePort && (isChatterboxPlaying || chatterboxEnabled || isSpeaking)) {
+      try {
+        activePort.postMessage({ action: 'PAUSE_AUDIO' });
+      } catch {}
     }
-    if (activeAudio && isChatterboxPlaying) {
-      activeAudio.pause();
-      isPaused = true;
-      updatePlayButtonState();
-      updateHUDStatus('⏸ Audio paused');
-      return;
+    // 2. Local Chatterbox path (audio element in content script)
+    if (activeAudio) {
+      try {
+        activeAudio.pause();
+      } catch {}
     }
-    if (window.speechSynthesis && window.speechSynthesis.speaking) {
-      window.speechSynthesis.pause();
-      isPaused = true;
-      updatePlayButtonState();
-      updateHUDStatus('⏸ Audio paused');
+    // 3. Browser SpeechSynthesis path
+    if (currentSpeakingItem) {
+      clientSpeechQueue.unshift(currentSpeakingItem);
+      currentSpeakingItem = null;
     }
+    isClientSpeechPlaying = false;
+    if (window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    }
+    updatePlayButtonState();
+    updateHUDStatus('⏸ Audio paused');
   }
 
   function resumeSpeech() {
-    if (chatterboxEnabled && activePort && isPaused) {
-      activePort.postMessage({ action: 'RESUME_AUDIO' });
-      isPaused = false;
+    isPaused = false;
+    if (chatterboxEnabled && activePort) {
+      try {
+        activePort.postMessage({ action: 'RESUME_AUDIO' });
+      } catch {}
       updatePlayButtonState();
       updateHUDStatus('🔊 Speaking with local Chatterbox…');
       return;
     }
-    if (activeAudio && isPaused) {
+    if (activeAudio) {
       activeAudio.play().catch(() => {});
-      isPaused = false;
       updatePlayButtonState();
       updateHUDStatus('🔊 Speaking with local Chatterbox…');
       return;
     }
-    if (window.speechSynthesis && window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
-      isPaused = false;
+    if (clientSpeechQueue.length > 0) {
+      playNextSpeechSentence();
       updatePlayButtonState();
       updateHUDStatus('🔊 Speaking explanation…');
     }
   }
 
   function stopSpeech(releaseMic = false) {
+    clientSpeechQueue = [];
+    isClientSpeechPlaying = false;
+    currentSpeakingItem = null;
     docyInterrupt.stop(releaseMic);
     docyInterrupt.setCurrentSpeakingText('');
     if (chatterboxEnabled && activePort) {
@@ -1427,16 +1418,19 @@
     updatePlayButtonState();
   }
 
-  function startSpeechQueueFromText(fullText) {
+  async function startSpeechQueueFromText(fullText) {
+    await sharedModulesReady;
     stopSpeech();
-    const sentences = fullText.match(/[^.!?]+[.!?]+(\s|$)/g) || [fullText];
     const currentReq = activeRequestId || 'local_replay';
-    sentences.forEach((s, idx) => {
-      const cleaned = shapeSpeechText(s);
-      if (cleaned) {
-        queueSpeechSentence(cleaned, idx + 1, currentReq);
-      }
+    if (!speechCore) return;
+    const replayBuffer = new speechCore.SentenceBuffer({
+      minSentenceLength: 4,
+      onSentence: (sentence, index) => {
+        queueSpeechSentence(sentence, index, currentReq);
+      },
     });
+    replayBuffer.addToken(fullText);
+    replayBuffer.flush();
   }
 
   function stopCurrentTeachingSession() {
@@ -1455,14 +1449,15 @@
       activePort = null;
     }
     activeRequestId = null;
-    chatterboxEnabled = true;
+    chatterboxEnabled = false;
     updatePlayButtonState();
   }
 
   // --- Main Teaching Flow ---
   let lastTriggerTime = 0;
 
-  function triggerTeaching(selectionOverride = null) {
+  async function triggerTeaching(selectionOverride = null, followUpOpts = {}) {
+    await sharedModulesReady;
     const now = performance.now();
     if (now - lastTriggerTime < 500) {
       return;
@@ -1491,6 +1486,11 @@
     // 1. Invalidate any existing session and stop active speech immediately
     stopCurrentTeachingSession();
 
+    // Prepare microphone access early during the user action gesture
+    if (!docyInterrupt.hasMicPermission) {
+      docyInterrupt.ensureMicAccess().catch(() => {});
+    }
+
     // 2. Setup new session ID & timing
     const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     activeRequestId = requestId;
@@ -1510,24 +1510,26 @@
     let accumulatedText = '';
     currentSpeechText = '';
 
-    // 3. Initialize SentenceBuffer for this session
-    const sentenceBuffer = new ClientSentenceBuffer({
-      minSentenceLength: 4,
-      onSentence: (sentence, index) => {
-        if (requestId !== activeRequestId) return;
+    // 3. Initialize SentenceBuffer from shared speechCore module
+    const sentenceBuffer = speechCore
+      ? new speechCore.SentenceBuffer({
+          minSentenceLength: 4,
+          onSentence: (sentence, index) => {
+            if (requestId !== activeRequestId) return;
 
-        if (index === 1 && timingMetrics.t5 === 0) {
-          timingMetrics.t5 = performance.now();
-          const latencyT5 = Math.round(timingMetrics.t5 - timingMetrics.t0);
-          console.log(`[DocVex Timing] First Complete Sentence (T0->T5): ${latencyT5}ms: "${sentence}"`);
-        }
+            if (index === 1 && timingMetrics.t5 === 0) {
+              timingMetrics.t5 = performance.now();
+              const latencyT5 = Math.round(timingMetrics.t5 - timingMetrics.t0);
+              console.log(`[DocVex Timing] First Complete Sentence (T0->T5): ${latencyT5}ms: "${sentence}"`);
+            }
 
-        // Chatterbox audio arrives through the background worker; use browser speech only as fallback.
-        if (!chatterboxEnabled) {
-          queueSpeechSentence(sentence, index, requestId);
-        }
-      },
-    });
+            // Chatterbox audio arrives through the background worker; use browser speech only as fallback.
+            if (!chatterboxEnabled) {
+              queueSpeechSentence(sentence, index, requestId);
+            }
+          },
+        })
+      : null;
 
     // 4. Connect bidirectional port to background service worker
     try {
@@ -1572,10 +1574,10 @@
           accumulatedText += data.token;
           currentSpeechText = accumulatedText;
           updateHUDExplanation(accumulatedText);
-          sentenceBuffer.addToken(data.token);
+          sentenceBuffer?.addToken(data.token);
         } else if (event === 'speech_done') {
           // Voice explanation stream finished; flush speech buffer so all sentences play cleanly
-          sentenceBuffer.flush();
+          sentenceBuffer?.flush();
           if (!isSpeaking) {
             updateHUDStatus(chatterboxEnabled ? '🎙️ Synthesizing voice with Chatterbox…' : '🔊 Speaking explanation…');
           }
@@ -1600,7 +1602,7 @@
           console.log(`[DocVex Timing] Full Generation Finished (T0->T7): ${latencyT7}ms`);
 
           // Flush any remaining characters in the sentence buffer
-          sentenceBuffer.flush();
+          sentenceBuffer?.flush();
 
           if (data.groundingStatus) {
             updateHUDBadge(data.groundingStatus);
@@ -1645,6 +1647,16 @@
             console.log(`[DocVex Timing] Chatterbox Playback Started (T0->T6): ${Math.round(timingMetrics.t6 - timingMetrics.t0)}ms`);
           }
           isSpeaking = true;
+          isChatterboxPlaying = true;
+
+          // If currently paused by user or Docy Voice Interrupt, immediately pause the offscreen audio!
+          if (isPaused || docyInterrupt.interrupted) {
+            try {
+              activePort.postMessage({ action: 'PAUSE_AUDIO' });
+            } catch {}
+            return;
+          }
+
           isPaused = false;
           updatePlayButtonState();
           updateHUDStatus(`🔊 Speaking with local Chatterbox… (sentence ${data.sentenceIndex || 1})`);
@@ -1656,12 +1668,14 @@
           } else {
             isSpeaking = false;
             isPaused = false;
+            isChatterboxPlaying = false;
             docyInterrupt.setCurrentSpeakingText('');
             docyInterrupt.stop();
             updatePlayButtonState();
             updateHUDStatus('Explanation complete.');
           }
         } else if (msg.event === 'error') {
+          isChatterboxPlaying = false;
           queueSpeechSentence(data.sentence, data.sentenceIndex, msg.requestId);
           updateHUDStatus('Local Chatterbox audio failed; using browser speech fallback.');
         }
@@ -1719,6 +1733,7 @@
         url: window.location.href || '',
         pageContext: extractSurroundingContext(),
         ...(preferredProvider ? { provider: preferredProvider } : {}),
+        ...(followUpOpts.isFollowUp ? { isFollowUp: true, followUpContext: followUpOpts.followUpContext || '' } : {}),
       };
 
       activePort.postMessage({
@@ -1792,7 +1807,7 @@
         floatingBtn.id = 'docvex-floating-trigger';
         floatingBtn.style.position = 'fixed';
         floatingBtn.style.zIndex = '2147483646';
-        floatingBtn.style.background = '#4f46e5';
+        floatingBtn.style.background = '#2C3480';
         floatingBtn.style.color = '#ffffff';
         floatingBtn.style.padding = '6px 14px';
         floatingBtn.style.borderRadius = '20px';
@@ -1800,10 +1815,10 @@
         floatingBtn.style.fontWeight = '600';
         floatingBtn.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         floatingBtn.style.cursor = 'pointer';
-        floatingBtn.style.boxShadow = '0 4px 14px rgba(0,0,0,0.35)';
-        floatingBtn.style.border = '1px solid #6366f1';
+        floatingBtn.style.boxShadow = '0 4px 14px rgba(0,0,0,0.5), 0 0 12px rgba(44, 52, 128, 0.4)';
+        floatingBtn.style.border = '1px solid #5d6eff';
         floatingBtn.style.userSelect = 'none';
-        floatingBtn.textContent = '🎓 Teach me (⌃⇧S)';
+        floatingBtn.textContent = 'Explain this (⌃⇧S)';
 
         floatingBtn.onmousedown = (evt) => {
           evt.preventDefault();

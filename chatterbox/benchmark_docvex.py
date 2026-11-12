@@ -26,7 +26,11 @@ import torch
 import torchaudio as ta
 
 CHECKOUT_ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(CHECKOUT_ROOT / "src"))
+for import_root in (CHECKOUT_ROOT, CHECKOUT_ROOT / "src"):
+    if str(import_root) not in sys.path:
+        sys.path.insert(0, str(import_root))
+
+from model_runtime import MODEL_NAMES, choose_device, load_model  # noqa: E402
 
 
 SENTENCES = (
@@ -34,16 +38,6 @@ SENTENCES = (
     "A hash table usually provides constant average-time lookup by mapping a key to a bucket.",
     "The browser sends an HTTP request, and the server returns a response with a status code and a body.",
 )
-
-
-def choose_device(requested: str) -> str:
-    if requested != "auto":
-        return requested
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
 
 
 def max_rss_bytes() -> int:
@@ -57,25 +51,13 @@ def mps_memory() -> int | None:
     return int(torch.mps.current_allocated_memory())
 
 
-def load_model(model_name: str, device: str) -> Any:
-    if model_name == "standard":
-        from chatterbox.tts import ChatterboxTTS
-
-        return ChatterboxTTS.from_pretrained(device=device)
-    if model_name in {"turbo", "nano"}:
-        from chatterbox.tts_turbo import ChatterboxTurboTTS
-
-        return ChatterboxTurboTTS.from_pretrained(device=device, nano=model_name == "nano")
-    raise ValueError(f"Unknown model: {model_name}")
-
-
 def benchmark(model_name: str, device: str, runs: int, output_dir: Path) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     rss_before = max_rss_bytes()
     mps_before = mps_memory()
 
     load_started = time.perf_counter()
-    model = load_model(model_name, device)
+    model = load_model(model_name, device, prepare_voice=False)
     load_seconds = time.perf_counter() - load_started
 
     results: list[dict[str, Any]] = []
@@ -148,7 +130,7 @@ def benchmark(model_name: str, device: str, runs: int, output_dir: Path) -> dict
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", choices=("standard", "turbo", "nano"), required=True)
+    parser.add_argument("--model", choices=MODEL_NAMES, required=True)
     parser.add_argument("--device", default="auto", choices=("auto", "cpu", "mps", "cuda"))
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--output-dir", type=Path, default=Path("benchmark-results"))

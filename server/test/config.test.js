@@ -38,3 +38,12 @@ test('helpers.parseProvider validates supported providers', () => {
   assert.equal(helpers.parseProvider('ollama'), 'ollama');
   assert.equal(helpers.parseProvider('unknown', 'ollama'), 'ollama');
 });
+
+test('helpers.parseFiniteFloat preserves zero/negative floats and validates bounds', () => {
+  assert.equal(helpers.parseFiniteFloat('0', 0.65, { min: 0, max: 2 }), 0);
+  assert.equal(helpers.parseFiniteFloat('-19.0', -23, { min: -36, max: -6 }), -19);
+  assert.equal(helpers.parseFiniteFloat('99', 0.65, { min: 0, max: 2 }), 0.65);
+  assert.equal(helpers.parseFiniteFloat('NaN', 0.65), 0.65);
+  assert.equal(config.CHATTERBOX_TARGET_SR, 24000);
+  assert.ok(config.CHATTERBOX_CFM_STEPS >= 1);
+});

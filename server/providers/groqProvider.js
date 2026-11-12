@@ -114,12 +114,34 @@ export const callGroq = async ({
   throw err;
 };
 
+const RATE_LIMIT_WAIT_MS = 40000;
+
+/**
+ * How long Groq asks a caller to wait after a 429: the Retry-After header, or "Please try again in 34.88s"
+ * (or "1m2.5s") in the message. Null when it does not say.
+ */
+export const rateLimitWaitMs = (response, message) => {
+  const header = Number(response?.headers?.get?.('retry-after'));
+  if (Number.isFinite(header) && header > 0) return header * 1000;
+  const match = /try again in (?:(\d+)m)?([\d.]+)s/i.exec(String(message || ''));
+  return match ? (Number(match[1] || 0) * 60 + Number(match[2])) * 1000 : null;
+};
+
+const sleep = (ms, signal) => new Promise((resolve, reject) => {
+  if (signal?.aborted) return reject(Object.assign(new Error('Aborted'), { name: 'AbortError' }));
+  const id = setTimeout(resolve, ms);
+  signal?.addEventListener('abort', () => { clearTimeout(id); reject(Object.assign(new Error('Aborted'), { name: 'AbortError' })); }, { once: true });
+});
+
 export const streamGroq = async ({
   prompt,
   systemPrompt = TEACHER_SYSTEM_PROMPT,
   apiKey,
   model = 'openai/gpt-oss-20b',
   timeoutMs = 30000,
+  maxTokens = null,
+  reasoningEffort = null,
+  maxRateLimitWaitMs = RATE_LIMIT_WAIT_MS,
   signal,
   onToken,
   fetchFn = fetch,
@@ -156,6 +178,10 @@ export const streamGroq = async ({
           ],
           temperature: 0.3,
           stream: true,
+          // A smaller answer allowance keeps a request inside a tokens-per-minute quota; low reasoning effort
+          // keeps a reasoning model's hidden reasoning from using the answer's share.
+          ...(maxTokens ? { max_tokens: maxTokens } : {}),
+          ...(reasoningEffort && /gpt-oss/.test(model) ? { reasoning_effort: reasoningEffort } : {}),
         }),
         signal: controller.signal,
       });
@@ -171,8 +197,17 @@ export const streamGroq = async ({
       if (GROQ_RETRYABLE_STATUSES.has(response.status) && attempt < maxRetries) {
         const errBody = await response.json().catch(() => ({}));
         const message = errBody?.error?.message || response.statusText;
-        console.warn(`[DocVex Groq Stream] ${response.status} overload on attempt ${attempt + 1}/${maxRetries + 1}: ${message}. Retrying…`);
-        await backoff(attempt, 1000, controller.signal);
+        // A tokens-per-minute limit names its own wait (often ~30 s): wait that long once, nothing has been
+        // shown yet. A longer wait is reported plainly instead of leaving the student staring at a spinner.
+        const wait = response.status === 429 ? rateLimitWaitMs(response, message) : null;
+        if (wait !== null && wait > maxRateLimitWaitMs) {
+          const error = new Error(`The model's free quota is used up for now; please try again in about ${Math.ceil(wait / 1000)} seconds.`);
+          error.statusCode = 429;
+          throw error;
+        }
+        console.warn(`[DocVex Groq Stream] ${response.status} on attempt ${attempt + 1}/${maxRetries + 1}: ${message}. Retrying${wait ? ` in ${Math.ceil(wait / 1000)} s` : ''}…`);
+        if (wait !== null) await sleep(wait + 250, signal);
+        else await backoff(attempt, 1000, controller.signal);
         continue;
       }
 
@@ -216,6 +251,19 @@ export const streamGroq = async ({
             }
           }
         }
+      }
+
+      // A reasoning model can end its turn with no visible answer (all of it spent on hidden reasoning).
+      // Nothing has been shown yet, so ask again; never report an empty answer as finished.
+      if (!fullExplanation.trim()) {
+        if (attempt < maxRetries) {
+          console.warn(`[DocVex Groq Stream] empty answer on attempt ${attempt + 1}/${maxRetries + 1}. Retrying…`);
+          await backoff(attempt, 500, controller.signal);
+          continue;
+        }
+        const error = new Error('Groq returned an empty answer. Please ask again.');
+        error.statusCode = 502;
+        throw error;
       }
 
       return {
