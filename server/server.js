@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { getChatterboxProvider, teachPipeline, streamTeachPipeline } from './pipeline.js';
+import { transcribeAudioWithGroq } from './providers/groqProvider.js';
 
 // Origin security: Only allow requests from chrome-extension:// origins or non-browser clients (service worker, curl)
 const applyOriginSecurity = (req, res) => {
@@ -28,17 +29,21 @@ const sendJson = (res, statusCode, data, req = null) => {
   res.end(JSON.stringify(data));
 };
 
-const parseJsonBody = async (req) => {
+const parseJsonBody = async (req, maxBytes = 1024 * 1024) => {
   return new Promise((resolve, reject) => {
     let body = '';
+    let rejected = false;
     req.on('data', (chunk) => {
+      if (rejected) return;
       body += chunk;
-      // Safeguard against overly large payloads (e.g., max 1MB)
-      if (body.length > 1024 * 1024) {
+      // Safeguard against overly large payloads
+      if (body.length > maxBytes) {
+        rejected = true;
         reject(new Error('Payload too large'));
       }
     });
     req.on('end', () => {
+      if (rejected) return;
       if (!body.trim()) {
         resolve({});
         return;
@@ -95,13 +100,41 @@ export const validateTeachInput = (body, maxLength = config.MAX_SELECTION_LENGTH
     return { valid: false, error: 'Request body must be a JSON object.' };
   }
 
-  const { text, url, title, provider, pageContext } = body;
+  const {
+    text,
+    url,
+    title,
+    provider,
+    pageContext,
+    isFollowUp,
+    followUpContext,
+    followUpSelectedText,
+    continueSentences,
+  } = body;
 
-  if (!text || typeof text !== 'string' || text.trim().length === 0) {
+  let cleanedContinue = [];
+  if (continueSentences !== undefined) {
+    if (!Array.isArray(continueSentences)) {
+      return { valid: false, error: 'continueSentences must be an array of strings.' };
+    }
+    cleanedContinue = continueSentences
+      .filter((s) => typeof s === 'string')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 200);
+    if (cleanedContinue.length === 0) {
+      return { valid: false, error: 'continueSentences must contain at least one sentence.' };
+    }
+  }
+
+  const hasContinue = cleanedContinue.length > 0;
+  if (!hasContinue && (!text || typeof text !== 'string' || text.trim().length === 0)) {
     return { valid: false, error: 'Select some text first.' };
   }
 
-  const trimmedText = text.trim();
+  const trimmedText = typeof text === 'string' && text.trim().length > 0
+    ? text.trim()
+    : (hasContinue ? 'Continue previous explanation.' : '');
   if (trimmedText.length > maxLength) {
     return {
       valid: false,
@@ -121,6 +154,14 @@ export const validateTeachInput = (body, maxLength = config.MAX_SELECTION_LENGTH
     return { valid: false, error: 'pageContext must be a string if provided.' };
   }
 
+  if (followUpContext !== undefined && typeof followUpContext !== 'string') {
+    return { valid: false, error: 'followUpContext must be a string if provided.' };
+  }
+
+  if (followUpSelectedText !== undefined && typeof followUpSelectedText !== 'string') {
+    return { valid: false, error: 'followUpSelectedText must be a string if provided.' };
+  }
+
   if (provider !== undefined && !['ollama', 'groq', 'hybrid'].includes(provider)) {
     return { valid: false, error: "Provider must be 'ollama', 'groq', or 'hybrid'." };
   }
@@ -133,6 +174,10 @@ export const validateTeachInput = (body, maxLength = config.MAX_SELECTION_LENGTH
       title: title?.trim() || '',
       pageContext: pageContext?.trim() || '',
       provider: provider || config.DEFAULT_PROVIDER,
+      isFollowUp: Boolean(isFollowUp),
+      followUpContext: followUpContext?.trim() || '',
+      followUpSelectedText: followUpSelectedText?.trim() || '',
+      continueSentences: cleanedContinue,
     },
   };
 };
@@ -238,6 +283,41 @@ export const createServer = (options = {}) => {
         return;
       } catch {
         return sendJson(res, 404, { error: 'Demo page not found.' }, req);
+      }
+    }
+
+    // Speech Transcription Endpoint (fallback when browser SpeechRecognition is blocked e.g. Brave)
+    if (req.method === 'POST' && pathname === '/transcribe') {
+      let body;
+      try {
+        body = await parseJsonBody(req, 5 * 1024 * 1024);
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message }, req);
+      }
+
+      const audioBase64 = typeof body?.audioBase64 === 'string' ? body.audioBase64.trim() : '';
+      if (!audioBase64) {
+        return sendJson(res, 400, { error: 'audioBase64 is required.' }, req);
+      }
+
+      const cleanBase64 = audioBase64.replace(/^data:[^;]+;base64,/, '');
+      const audioBuffer = Buffer.from(cleanBase64, 'base64');
+      if (!audioBuffer || audioBuffer.length === 0) {
+        return sendJson(res, 400, { error: 'Decoded audio payload is empty.' }, req);
+      }
+
+      const transcribeHandler = serverConfig.transcribeHandler || transcribeAudioWithGroq;
+      try {
+        const result = await transcribeHandler({
+          audioBuffer,
+          mimeType: typeof body.mimeType === 'string' ? body.mimeType : 'audio/webm',
+          fileName: typeof body.fileName === 'string' ? body.fileName : '',
+          language: typeof body.language === 'string' ? body.language : 'en',
+          apiKey: serverConfig.GROQ_API_KEY,
+        });
+        return sendJson(res, 200, result, req);
+      } catch (err) {
+        return sendJson(res, err.statusCode || 502, { error: err.message || 'Audio transcription failed.' }, req);
       }
     }
 

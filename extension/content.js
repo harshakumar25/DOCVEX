@@ -16,6 +16,29 @@
   if (window.__DOCVEX_INITIALIZED__) return;
   window.__DOCVEX_INITIALIZED__ = true;
 
+  // --- Shared Canonical ES Modules (Zero Duplication) ---
+  let speechCore = null;
+  let voiceSelector = null;
+  let vadModule = null;
+  let convModule = null;
+  let conversationState = null;
+
+  const sharedModulesReady = (async () => {
+    if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+      const [coreMod, voiceMod, vadMod, convMod] = await Promise.all([
+        import(chrome.runtime.getURL('speechCore.js')),
+        import(chrome.runtime.getURL('voiceSelector.js')),
+        import(chrome.runtime.getURL('voiceActivityDetector.js')),
+        import(chrome.runtime.getURL('conversationState.js')),
+      ]);
+      speechCore = coreMod;
+      voiceSelector = voiceMod;
+      vadModule = vadMod;
+      convModule = convMod;
+      conversationState = new convMod.DocyConversationState();
+    }
+  })();
+
   // --- State Variables ---
   let hudContainer = null;
   let shadowRoot = null;
@@ -31,6 +54,8 @@
   let chatterboxAudioQueue = [];
   let isChatterboxPlaying = false;
   let chatterboxObjectUrls = new Set();
+  let currentSessionIsFollowUp = false;
+  let currentSessionResumeOffset = 0;
 
   // Timing metrics
   let timingMetrics = {
@@ -41,11 +66,6 @@
     t7: 0, // full generation finished
   };
 
-  // --- Text & Boundary Helpers ---
-  const NON_TERMINATING_ABBREVIATIONS = new Set([
-    'e.g', 'i.e', 'vs', 'etc', 'dr', 'mr', 'mrs', 'ms', 'prof', 'inc', 'ltd', 'co', 'approx', 'dept', 'fig', 'no', 'vol', 'al'
-  ]);
-
   function isSafeUrl(urlString) {
     try {
       const parsed = new URL(urlString);
@@ -55,182 +75,20 @@
     }
   }
 
-  function shapeSpeechText(text) {
-    if (!text || typeof text !== 'string') return '';
-    let spoken = text;
-    // Remove raw URLs
-    spoken = spoken.replace(/https?:\/\/\S+/gi, '');
-    // Remove markdown headers
-    spoken = spoken.replace(/^#{1,6}\s+/gm, '');
-    // Remove code blocks and inline backticks
-    spoken = spoken.replace(/```[a-zA-Z]*\n?/g, '');
-    spoken = spoken.replace(/`/g, '');
-    // Remove bold / italics
-    spoken = spoken.replace(/\*\*([^*]+)\*\*/g, '$1');
-    spoken = spoken.replace(/\*([^*]+)\*/g, '$1');
-    spoken = spoken.replace(/__([^_]+)__/g, '$1');
-    spoken = spoken.replace(/_([^_]+)_/g, '$1');
-    // Remove citation formatting [Source 1], [1], [link](url)
-    spoken = spoken.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-    spoken = spoken.replace(/\[(?:Source\s*)?\d+[^\]]*\]/gi, '');
-    // Strip list bullets cleanly (same as server shapeSpeechText)
-    spoken = spoken.replace(/^[\*\-]\s+/gm, '');
-    // Normalize spaces and line breaks
-    spoken = spoken.replace(/[ \t]+/g, ' ');
-    spoken = spoken.replace(/\n\s*\n+/g, ' ');
-    return spoken.trim();
+  function safeShapeSpeechText(text) {
+    return speechCore ? speechCore.shapeSpeechText(text) : String(text || '').trim();
   }
 
-  function isFalseBoundary(text, punctuationIndex) {
-    const char = text[punctuationIndex];
-
-    if (char === '.') {
-      const prevChar = text[punctuationIndex - 1];
-      const nextChar = text[punctuationIndex + 1];
-
-      // Decimal number (e.g. 3.14) or version (e.g. 1.2)
-      if (/\d/.test(prevChar) && /\d/.test(nextChar)) {
-        return true;
-      }
-
-      // Ellipsis (...)
-      if (prevChar === '.' || nextChar === '.') {
-        return true;
-      }
-
-      // URL or domain suffix
-      const surrounding = text.slice(Math.max(0, punctuationIndex - 15), Math.min(text.length, punctuationIndex + 15));
-      if (/https?:\/\/|\.com|\.org|\.net|\.io|\.edu|\.gov/i.test(surrounding)) {
-        return true;
-      }
-
-      // Preceding abbreviation word
-      const preceding = text.slice(Math.max(0, punctuationIndex - 10), punctuationIndex);
-      const lastWordMatch = preceding.match(/([a-zA-Z0-9\._]+)$/);
-      if (lastWordMatch) {
-        const candidate = lastWordMatch[1].toLowerCase().replace(/\.$/, '');
-        if (NON_TERMINATING_ABBREVIATIONS.has(candidate)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
-
-  // Classify the gap after a sentence split: paragraph break = 1000ms, normal = 0ms
-  function classifyPause(text, punctEndIndex) {
-    const remainder = text.slice(punctEndIndex);
-    if (/^\s*\n\s*\n/.test(remainder)) return 1000;
-    return 0;
-  }
-
-  // --- SentenceBuffer Class ---
-  class ClientSentenceBuffer {
-    constructor({ onSentence, minSentenceLength = 4, maxUtteranceLength = 360 }) {
-      this.buffer = '';
-      this.onSentence = onSentence;
-      this.minSentenceLength = minSentenceLength;
-      this.maxUtteranceLength = maxUtteranceLength;
-      this.sentenceIndex = 0;
-    }
-
-    addToken(token) {
-      if (!token || typeof token !== 'string') return;
-      this.buffer += token;
-      this.process();
-    }
-
-    emitClamped(candidate, pauseAfterMs = 0) {
-      const cleaned = shapeSpeechText(candidate);
-      if (!cleaned || cleaned.length < this.minSentenceLength) return;
-
-      if (cleaned.length <= this.maxUtteranceLength) {
-        this.sentenceIndex++;
-        this.onSentence(cleaned, this.sentenceIndex, pauseAfterMs);
-        return;
-      }
-
-      let remaining = cleaned;
-      while (remaining.length > this.maxUtteranceLength) {
-        const slice = remaining.slice(0, this.maxUtteranceLength);
-        const match = slice.match(/.*([,;:—]|\s-\s)\s*/);
-        let splitAt = -1;
-        if (match && match[0].length >= this.minSentenceLength) {
-          splitAt = match[0].length;
-        } else {
-          splitAt = slice.lastIndexOf(' ');
-        }
-
-        if (splitAt <= 0 || splitAt < this.minSentenceLength) {
-          splitAt = this.maxUtteranceLength;
-        }
-
-        const part = remaining.slice(0, splitAt).trim();
-        if (part.length > 0) {
-          this.sentenceIndex++;
-          this.onSentence(part, this.sentenceIndex, 0);
-        }
-        remaining = remaining.slice(splitAt).trim();
-      }
-
-      if (remaining.length >= this.minSentenceLength) {
-        this.sentenceIndex++;
-        this.onSentence(remaining, this.sentenceIndex, pauseAfterMs);
-      }
-    }
-
-    process() {
-      const boundaryRegex = /([.?!]+)(\s+|\n+|$)/g;
-      let match;
-
-      while ((match = boundaryRegex.exec(this.buffer)) !== null) {
-        const punctIndex = match.index;
-        const punctLength = match[1].length;
-        const spaceLength = match[2].length;
-        const splitIndex = punctIndex + punctLength + spaceLength;
-
-        if (splitIndex >= this.buffer.length && spaceLength === 0) {
-          break;
-        }
-
-        if (isFalseBoundary(this.buffer, punctIndex)) {
-          continue;
-        }
-
-        const candidate = this.buffer.slice(0, splitIndex).trim();
-
-        if (candidate.length >= this.minSentenceLength) {
-          const pauseAfterMs = classifyPause(this.buffer, punctIndex + punctLength);
-          this.emitClamped(candidate, pauseAfterMs);
-          this.buffer = this.buffer.slice(splitIndex);
-          boundaryRegex.lastIndex = 0;
-        }
-      }
-    }
-
-    flush() {
-      const remaining = this.buffer.trim();
-      if (remaining.length > 0) {
-        this.emitClamped(remaining);
-      }
-      this.buffer = '';
-    }
-
-    reset() {
-      this.buffer = '';
-      this.sentenceIndex = 0;
-    }
-  }
-
-  // --- Docy Voice Interrupt ---
-  // Dual-engine listener: SpeechRecognition for keyword matching + Web Audio VAD fallback.
-  // Listens while DocVex is speaking and pauses audio immediately on voice command or voice activity.
+  // --- Docy Voice Interrupt & Instruction Capture ---
+  // Dual-engine listener:
+  //   1. Adaptive Web Audio VAD (spectra + flatness + ZCR + hangover) rejects fan/click/AGC noise
+  //   2. Web Speech API in Chrome + MediaRecorder -> Groq Whisper (/transcribe) fallback in Brave/offline
   class DocyVoiceInterrupt {
     constructor() {
       this.recognition = null;
-      this.active = false;         // listening is running
-      this.interrupted = false;    // audio is currently paused by Docy
+      this.active = false;
+      this.interrupted = false;
+      this.userDisabled = false;
       this.resumeTimer = null;
       this.countdownInterval = null;
       this.secondsLeft = 0;
@@ -240,16 +98,34 @@
       this.audioCtx = null;
       this.analyser = null;
       this.vadInterval = null;
+      this.vadDetector = null;
+      this.vadFreqData = null;
+      this.vadTimeData = null;
       this.hasMicPermission = false;
       this.recognitionWorking = false;
+      this._sttNetworkBlocked = false;
+
+      // MediaRecorder speech segment capture for Brave / Whisper fallback
+      this.mediaRecorder = null;
+      this.recordedChunks = [];
+      this.isCapturingSpeech = false;
+      this.segmentHadConfirmedSpeech = false;
+      this.transcribing = false;
+      this.maxCaptureTimer = null;
+
+      // Transcript debounce & dedup
+      this.pendingTranscript = '';
+      this.transcriptDebounceTimer = null;
+      this.lastSubmittedAt = 0;
+      this.lastSubmittedNormalized = '';
     }
 
-    // Regex patterns that trigger a pause
+    // Regex patterns that trigger an immediate pause
     static WAKE = [
       /\b(docy|doci|docvex|dokey|dhoki)\b/i,
-      /\b(ru+k+|roo?k+)\s*(ja+[ao]*|o+|ha)?\b/i, // "ruk jao", "ruk jaao", "rukk jaoo", "ruko", "rooko"
+      /\b(ru+k+|roo?k+)\s*(ja+[ao]*|o+|ha)?\b/i,
       /\bek\s*(sec|second|pal|minute|min)\b/i,
-      /\b(wait|waitt)(\s+(for\s+)?(a\s+)?(moment|sec|second|minute))?\b/i, // "wait", "wait for moment", "wait for a moment"
+      /\b(wait|waitt)(\s+(for\s+)?(a\s+)?(moment|sec|second|minute))?\b/i,
       /\bpause\b/i,
       /\bhold\s*on\b/i,
       /\bstop\b/i,
@@ -257,41 +133,68 @@
       /\bsuno\b/i,
     ];
 
-    // Regex patterns that resume after a pause
-    static RESUME = [
-      /\b(continue|resume|go\s*on|carry\s*on)\b/i,
-      /\bchalte\s*raho\b/i,
-      /\bjaari\b/i,
-      /\btheek\s*hai\b/i,
-      /\bhaan\b/i,
-      /\b(ok|okay|got\s*it|fine|chalo)\b/i,
-    ];
-
     setCurrentSpeakingText(text) {
       this.currentSpeakingText = (text || '').toLowerCase().trim();
     }
 
+    _isPromptMode() {
+      const st = conversationState?.state;
+      return st === 'INTERRUPTED_LISTENING' || st === 'ASK_CONTINUE' || st === 'AWAITING_PROMPT';
+    }
+
     _isSelfEcho(transcript) {
-      if (!this.currentSpeakingText) return false;
+      if (!this.currentSpeakingText || this._isPromptMode()) return false;
       const lower = transcript.toLowerCase().trim();
-      // If the user explicitly addressed Docy or used clear Hindi/distinct wake words, it's not echo
       if (/\b(docy|doci|docvex|dokey|dhoki|ruk|ruko|doubt|suno)\b/i.test(lower)) {
         return false;
       }
-      // If it's a bare generic word ("wait", "stop", "pause") that literally appears in the sentence DocVex is uttering:
       if (/^(wait|stop|pause)$/i.test(lower) && this.currentSpeakingText.includes(lower)) {
         return true;
+      }
+      // Check high word overlap with currently spoken TTS words when DocVex is speaking
+      const words = lower.replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter((w) => w.length >= 3);
+      if (words.length >= 2 && words.length <= 5) {
+        const matchCount = words.filter((w) => this.currentSpeakingText.includes(w)).length;
+        if (matchCount === words.length) return true;
       }
       return false;
     }
 
+    _passesNoiseGuard(transcript, { isFinal = false, confidence = 1, source = 'webspeech' } = {}) {
+      const text = String(transcript || '').trim();
+      if (!text) return false;
+      if (source === 'whisper') return text.length >= 2;
+
+      const words = text.split(/\s+/).filter(Boolean);
+      const inPromptMode = this._isPromptMode() || this.interrupted;
+
+      // Reject pure single-word unconfirmed noise blip during playback
+      if (!inPromptMode && !isFinal && words.length === 1 && confidence < 0.72) {
+        return false;
+      }
+
+      if (inPromptMode) {
+        return isFinal || words.length >= 2 || Boolean(convModule?.looksLikePromptOrInstruction?.(text));
+      }
+
+      return true;
+    }
+
     async ensureMicAccess() {
+      await sharedModulesReady;
       if (this.hasMicPermission && this.micStream?.active) return true;
       try {
         console.log('[Docy Voice] Requesting microphone access via getUserMedia...');
-        this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        this.micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
         this.hasMicPermission = true;
-        console.log('[Docy Voice] Microphone access granted! 🎙️');
+        this.userDisabled = false;
+        console.log('[Docy Voice] Microphone access granted!');
         this._updateMicButton(true);
         this._initVAD(this.micStream);
         return true;
@@ -305,27 +208,64 @@
     }
 
     async toggleMicAccess() {
+      await sharedModulesReady;
       if (!this.hasMicPermission) {
         const ok = await this.ensureMicAccess();
         if (ok) {
-          updateHUDStatus('🎙️ Docy voice listener active!');
-          if (isSpeaking) this.start();
+          if (isSpeaking && !isPaused) {
+            await this.start();
+            updateHUDStatus('🎙️ Docy mic active — speak anytime to ask or instruct!');
+          } else {
+            await enterActivePromptListening();
+          }
         }
-      } else {
-        updateHUDStatus('🎙️ Docy voice listener is active.');
+        return;
       }
+
+      if (this.userDisabled) {
+        this.userDisabled = false;
+        this._updateMicButton(true);
+        if (isSpeaking && !isPaused) {
+          await this.start();
+          updateHUDStatus('🎙️ Docy mic resumed!');
+        } else {
+          await enterActivePromptListening();
+        }
+        return;
+      }
+
+      // If paused or idle and NOT yet in prompt mode, switch straight to active listening
+      if ((!isSpeaking || isPaused) && conversationState?.state !== 'AWAITING_PROMPT') {
+        await enterActivePromptListening();
+        return;
+      }
+
+      // Otherwise mute Docy mic cleanly
+      this.userDisabled = true;
+      this.stop(false);
+      this._updateMicButton(false);
+      updateHUDStatus('🔇 Docy mic muted.');
     }
 
     _updateMicButton(enabled) {
       if (!shadowRoot) return;
       const micBtn = shadowRoot.querySelector('#docvex-btn-mic');
       if (micBtn) {
-        micBtn.textContent = enabled ? '🎙️ Docy: On' : '🎙️ Enable Mic';
-        micBtn.classList.toggle('active', enabled);
+        if (this.userDisabled && this.hasMicPermission) {
+          micBtn.textContent = '🔇 Mic Off';
+          micBtn.classList.remove('active');
+        } else if (enabled) {
+          micBtn.textContent = this._isPromptMode() ? '🎙️ Listening' : '🎙️ Docy: On';
+          micBtn.classList.add('active');
+        } else {
+          micBtn.textContent = '🎙️ Enable Mic';
+          micBtn.classList.remove('active');
+        }
       }
     }
 
     _initVAD(stream) {
+      if (!vadModule) return;
       try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (!AudioCtx) return;
@@ -337,59 +277,247 @@
         }
         const source = this.audioCtx.createMediaStreamSource(stream);
         this.analyser = this.audioCtx.createAnalyser();
-        this.analyser.fftSize = 256;
+        const cfg = vadModule.DEFAULT_VAD_CONFIG;
+        this.analyser.fftSize = cfg.fftSize;
+        this.analyser.smoothingTimeConstant = cfg.smoothingTimeConstant;
         source.connect(this.analyser);
+
+        this.vadFreqData = new Float32Array(this.analyser.frequencyBinCount);
+        this.vadTimeData = new Float32Array(this.analyser.fftSize);
+        this.vadDetector = new vadModule.AdaptiveSpeechDetector(cfg);
         this._startVADMonitoring();
       } catch (err) {
         console.warn('[Docy VAD Init Error]', err.message);
       }
     }
 
+    _pickRecorderMimeType() {
+      if (typeof MediaRecorder === 'undefined') return '';
+      const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+      for (const mime of candidates) {
+        if (typeof MediaRecorder.isTypeSupported !== 'function' || MediaRecorder.isTypeSupported(mime)) {
+          return mime;
+        }
+      }
+      return '';
+    }
+
+    _startSegmentCapture() {
+      if (this.isCapturingSpeech || !this.micStream || !this.micStream.active) return;
+      if (typeof MediaRecorder === 'undefined') return;
+
+      try {
+        const mimeType = this._pickRecorderMimeType();
+        const opts = mimeType ? { mimeType } : undefined;
+        this.recordedChunks = [];
+        this.segmentHadConfirmedSpeech = false;
+        this.mediaRecorder = new MediaRecorder(this.micStream, opts);
+        this.isCapturingSpeech = true;
+
+        this.mediaRecorder.ondataavailable = (evt) => {
+          if (evt.data && evt.data.size > 0) {
+            this.recordedChunks.push(evt.data);
+          }
+        };
+
+        this.mediaRecorder.start(200);
+        clearTimeout(this.maxCaptureTimer);
+        this.maxCaptureTimer = setTimeout(() => {
+          if (this.isCapturingSpeech && this.segmentHadConfirmedSpeech) {
+            this._finishSegmentCaptureAndTranscribe(true);
+          } else {
+            this._cancelSegmentCapture();
+          }
+        }, 14000);
+      } catch (err) {
+        this.isCapturingSpeech = false;
+        console.warn('[Docy MediaRecorder Start Error]', err.message);
+      }
+    }
+
+    _cancelSegmentCapture() {
+      clearTimeout(this.maxCaptureTimer);
+      this.maxCaptureTimer = null;
+      const recorder = this.mediaRecorder;
+      this.mediaRecorder = null;
+      this.isCapturingSpeech = false;
+      this.segmentHadConfirmedSpeech = false;
+      this.recordedChunks = [];
+      if (recorder && recorder.state !== 'inactive') {
+        recorder.ondataavailable = null;
+        recorder.onstop = null;
+        try { recorder.stop(); } catch { /* ignore */ }
+      }
+    }
+
+    async _finishSegmentCaptureAndTranscribe(force = false) {
+      clearTimeout(this.maxCaptureTimer);
+      this.maxCaptureTimer = null;
+      const recorder = this.mediaRecorder;
+      if (!recorder || !this.isCapturingSpeech) return;
+
+      const hadConfirmed = this.segmentHadConfirmedSpeech || force;
+      this.isCapturingSpeech = false;
+      this.segmentHadConfirmedSpeech = false;
+      this.mediaRecorder = null;
+
+      if (!hadConfirmed) {
+        try { if (recorder.state !== 'inactive') recorder.stop(); } catch { /* ignore */ }
+        this.recordedChunks = [];
+        return;
+      }
+
+      // Skip backend Whisper if WebSpeech ALREADY submitted a transcript cleanly moments ago
+      const recentlySubmittedViaWebSpeech = Date.now() - this.lastSubmittedAt < 2200 || Boolean(this.pendingTranscript);
+      const shouldUseWhisper = this._sttNetworkBlocked || !this.recognition || !this.recognitionWorking || (force && !recentlySubmittedViaWebSpeech);
+
+      const blob = await new Promise((resolve) => {
+        if (recorder.state === 'inactive') {
+          resolve(new Blob(this.recordedChunks, { type: recorder.mimeType || 'audio/webm' }));
+          return;
+        }
+        recorder.onstop = () => {
+          resolve(new Blob(this.recordedChunks, { type: recorder.mimeType || 'audio/webm' }));
+        };
+        try {
+          recorder.stop();
+        } catch {
+          resolve(null);
+        }
+      });
+
+      this.recordedChunks = [];
+      if (!shouldUseWhisper || !blob || blob.size < 1600 || blob.size > 3500000) {
+        return;
+      }
+
+      await this._transcribeBlobWithBackend(blob);
+    }
+
+    async _transcribeBlobWithBackend(blob) {
+      if (this.transcribing || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return;
+      this.transcribing = true;
+      updateHUDStatus('🧠 Transcribing your voice instruction…');
+      try {
+        const audioBase64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(new Error('Failed to read microphone audio.'));
+          reader.readAsDataURL(blob);
+        });
+
+        const response = await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            {
+              action: 'TRANSCRIBE_AUDIO',
+              payload: {
+                audioBase64,
+                mimeType: blob.type || 'audio/webm',
+                language: 'en',
+              },
+            },
+            (res) => resolve(res)
+          );
+        });
+
+        if (response?.success && response.data?.text) {
+          const text = response.data.text.trim();
+          console.log('[Docy Whisper Transcribed]', text);
+          if (text) {
+            this._handleTranscript(text, { isFinal: true, confidence: 0.95, source: 'whisper' });
+          } else {
+            updateHUDStatus('🎙️ Didn’t catch that — try speaking clearly or type below.');
+          }
+        } else {
+          console.warn('[Docy Whisper Error]', response?.error);
+          if (this._isPromptMode()) {
+            updateHUDStatus('🎙️ Listening (mic ready — type below or speak closer)…');
+          }
+        }
+      } catch (err) {
+        console.warn('[Docy Transcribe Failed]', err.message);
+      } finally {
+        this.transcribing = false;
+      }
+    }
+
     _startVADMonitoring() {
       if (this.vadInterval) clearInterval(this.vadInterval);
-      const dataArray = new Uint8Array(this.analyser ? this.analyser.frequencyBinCount : 0);
-      let consecutiveSpikes = 0;
+      if (!vadModule || !this.vadDetector) return;
 
+      const intervalMs = vadModule.DEFAULT_VAD_CONFIG.sampleIntervalMs || 45;
       this.vadInterval = setInterval(() => {
-        // VAD only acts as interrupt when DocVex is actively speaking and not already paused
-        if (!this.active || this.interrupted || !isSpeaking || isPaused) {
-          consecutiveSpikes = 0;
+        if (!this.active || this.userDisabled || !this.analyser || !this.vadDetector) {
+          return;
+        }
+        const listeningInPrompt = this._isPromptMode();
+        const listeningDuringPlayback = isSpeaking && !isPaused;
+        if (!listeningInPrompt && !listeningDuringPlayback) {
+          if (this.isCapturingSpeech) this._cancelSegmentCapture();
           return;
         }
 
-        // If SpeechRecognition is actively providing transcripts, prefer STT over raw VAD
-        if (this.recognitionWorking) return;
-
-        if (!this.analyser) return;
-        this.analyser.getByteFrequencyData(dataArray);
-
-        // Calculate average energy in voice spectrum (bins 2 to 40 roughly 150Hz - 3500Hz)
-        let sum = 0;
-        const startBin = 2;
-        const endBin = Math.min(45, dataArray.length);
-        for (let i = startBin; i < endBin; i++) {
-          sum += dataArray[i];
+        if (this.audioCtx?.state === 'suspended') {
+          this.audioCtx.resume().catch(() => {});
         }
-        const avg = sum / (endBin - startBin);
 
-        // Threshold for intentional speech into microphone (ignore background noise < 38)
-        if (avg > 38) {
-          consecutiveSpikes++;
-          if (consecutiveSpikes >= 2) { // sustained for ~160ms
-            console.log('[Docy VAD] Voice activity detected via microphone (level:', Math.round(avg), '). Pausing DocVex.');
-            consecutiveSpikes = 0;
-            this._wake('voice activity');
+        this.analyser.getFloatFrequencyData(this.vadFreqData);
+        this.analyser.getFloatTimeDomainData(this.vadTimeData);
+
+        const features = vadModule.extractAcousticFeatures({
+          frequencyDb: this.vadFreqData,
+          timeDomain: this.vadTimeData,
+          sampleRate: this.audioCtx?.sampleRate || 48000,
+          fftSize: this.analyser.fftSize,
+        });
+
+        const strictMode = listeningDuringPlayback && !listeningInPrompt;
+        const result = this.vadDetector.update(features, { strictMode, nowMs: Date.now() });
+
+        if (!this.isCapturingSpeech && (result.state === 'CANDIDATE' || result.event === 'speech_start')) {
+          if (this._sttNetworkBlocked || !this.recognition || listeningInPrompt) {
+            this._startSegmentCapture();
           }
-        } else {
-          consecutiveSpikes = 0;
         }
-      }, 80);
+
+        if (result.state === 'SPEAKING') {
+          this.segmentHadConfirmedSpeech = true;
+          if (this.interrupted && conversationState?.state === 'INTERRUPTED_LISTENING') {
+            // Keep extending countdown while the user is actively talking so Docy never interrupts mid-sentence
+            this.secondsLeft = Math.max(this.secondsLeft, 7);
+          }
+        }
+
+        if (result.state === 'IDLE' && this.isCapturingSpeech && !this.segmentHadConfirmedSpeech) {
+          this._cancelSegmentCapture();
+        }
+
+        if (result.event === 'speech_start') {
+          if (!this.interrupted && listeningDuringPlayback) {
+            console.log('[Docy VAD] Confirmed real speech over noise floor. Pausing playback to listen.');
+            this._wake('voice activity');
+            if (!this.isCapturingSpeech && (this._sttNetworkBlocked || !this.recognition)) {
+              this._startSegmentCapture();
+            }
+          } else if (listeningInPrompt) {
+            this._setListeningStyle(true);
+            updateHUDStatus('🎙️ Hearing you… finish your instruction or question.');
+          }
+        }
+
+        if (result.event === 'speech_end') {
+          if (this.isCapturingSpeech && this.segmentHadConfirmedSpeech) {
+            this._finishSegmentCaptureAndTranscribe(false);
+          }
+        }
+      }, intervalMs);
     }
 
     init() {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) {
-        console.warn('[Docy Voice] Web Speech API not supported; using Web Audio VAD fallback.');
+        console.warn('[Docy Voice] Web Speech API not supported; using VAD + Whisper backend.');
+        this._sttNetworkBlocked = true;
         return false;
       }
 
@@ -397,45 +525,29 @@
         this.recognition = new SR();
         this.recognition.continuous = true;
         this.recognition.interimResults = true;
-        this.recognition.lang = 'en-IN'; // supports English, Hinglish, and Hindi accents
+        this.recognition.lang = 'en-IN';
         this.recognition.maxAlternatives = 1;
 
         this.recognition.onstart = () => {
-          console.log('[Docy Voice] SpeechRecognition started successfully.');
+          console.log('[Docy Voice] SpeechRecognition active.');
           this.recognitionWorking = true;
+          this._sttNetworkBlocked = false;
         };
 
         this.recognition.onresult = (event) => {
           this.recognitionWorking = true;
+          this._sttNetworkBlocked = false;
           const last = event.results[event.results.length - 1];
           const transcript = (last[0].transcript || '').trim();
-          if (!transcript) return;
-          console.log('[Docy Voice Heard]', transcript);
-
-          if (!this.interrupted) {
-            if (this._isSelfEcho(transcript)) return;
-            if (DocyVoiceInterrupt.WAKE.some((p) => p.test(transcript))) {
-              console.log('[Docy Voice] Wake trigger matched in:', transcript);
-              this._wake(transcript);
-            }
-          } else {
-            // If the user gave an explicit resume command
-            if (DocyVoiceInterrupt.RESUME.some((p) => p.test(transcript))) {
-              console.log('[Docy Voice] Resume trigger matched in:', transcript);
-              this._resume();
-              return;
-            }
-
-            // User is speaking a question, thought, or doubt while paused!
-            this.lastSpokenText = transcript;
-            const preview = transcript.length > 36 ? transcript.slice(0, 33) + '…' : transcript;
-            this._startCountdown(6, preview);
-          }
+          const confidence = typeof last[0].confidence === 'number' ? last[0].confidence : 0.9;
+          const isFinal = Boolean(last.isFinal);
+          this._handleTranscript(transcript, { isFinal, confidence, source: 'webspeech' });
         };
 
         this.recognition.onend = () => {
-          if (this.active && !this.interrupted) {
-            try { this.recognition.start(); } catch { /* already starting */ }
+          const shouldStayListening = this.active && !this.userDisabled && !this._sttNetworkBlocked;
+          if (shouldStayListening && (this._isPromptMode() || (isSpeaking && !isPaused))) {
+            try { this.recognition.start(); } catch { /* already running */ }
           }
         };
 
@@ -444,64 +556,200 @@
           if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
             this.recognitionWorking = false;
             updateHUDStatus('🎙️ Allow microphone for Docy voice commands');
-          } else if (e.error === 'network') {
-            // Typical in Brave where Google STT cloud server is stripped
+          } else if (e.error === 'network' || e.error === 'language-not-supported') {
+            // Brave strips Google Cloud STT — switch cleanly to VAD + Whisper backend
             this.recognitionWorking = false;
-            console.log('[Docy Voice] Cloud STT offline/blocked; Web Audio VAD fallback active.');
+            this._sttNetworkBlocked = true;
+            console.log('[Docy Voice] Cloud STT blocked/offline; switching seamlessly to Adaptive VAD + Whisper.');
           }
         };
 
         return true;
       } catch (err) {
         console.warn('[Docy Voice Init Error]', err);
+        this._sttNetworkBlocked = true;
         return false;
       }
     }
 
-    /** Start continuous listening. Call when DocVex begins speaking. */
-    async start() {
-      if (this.active) return;
-      this.active = true;
-      console.log('[Docy Voice] Starting Docy voice listener...');
+    _stripLeadingWakeWord(transcript) {
+      return String(transcript || '')
+        .replace(/^(?:hey\s+|ok(?:ay)?\s+|hi\s+)?(?:docy|doci|docvex|dokey|dhoki|wait|ruko|pause|suno)[\s,.:;-]*/i, '')
+        .trim();
+    }
 
-      // 1. Ensure microphone access is active
-      await this.ensureMicAccess();
+    _handleTranscript(transcript, meta = {}) {
+      const text = String(transcript || '').trim();
+      if (!text) return;
+      if (this._isSelfEcho(text)) return;
+      if (!this._passesNoiseGuard(text, meta)) return;
 
-      // 2. Start SpeechRecognition if available
-      if (!this.recognition) this.init();
-      if (this.recognition) {
-        try {
-          this.recognition.start();
-        } catch { /* already running */ }
+      const normalized = convModule ? convModule.normalizeVoiceText(text) : text.toLowerCase();
+      if (!normalized) return;
+
+      // Deduplicate rapid repeated dispatch from dual WebSpeech + Whisper firing on same sentence
+      if (normalized === this.lastSubmittedNormalized && Date.now() - this.lastSubmittedAt < 3000) {
+        return;
+      }
+
+      const st = conversationState?.state;
+      console.log(`[Docy Voice Heard] (${meta.source || 'stt'}, state=${st || 'NONE'}):`, text);
+
+      // 1. User is answering "Continue from previous? Proceed / Deny"
+      if (st === 'ASK_CONTINUE' && convModule) {
+        if (convModule.isProceedCommand(text)) {
+          this._clearTranscriptDebounce();
+          this.lastSubmittedAt = Date.now();
+          this.lastSubmittedNormalized = normalized;
+          handleProceedPrevious();
+          return;
+        }
+        if (convModule.isDenyCommand(text)) {
+          this._clearTranscriptDebounce();
+          this.lastSubmittedAt = Date.now();
+          this.lastSubmittedNormalized = normalized;
+          handleDenyContinue();
+          return;
+        }
+        if (meta.isFinal && convModule.looksLikePromptOrInstruction(text)) {
+          this._clearTranscriptDebounce();
+          this._commitUserPrompt(text);
+          return;
+        }
+      }
+
+      // 2. While DocVex is actively playing main or follow-up speech
+      if (!this.interrupted && isSpeaking && !isPaused) {
+        const hasWake = DocyVoiceInterrupt.WAKE.some((p) => p.test(text));
+        const stripped = this._stripLeadingWakeWord(text);
+        const isDirectCommand =
+          (meta.isFinal || meta.source === 'whisper') &&
+          Boolean(convModule?.looksLikePromptOrInstruction?.(stripped || text)) &&
+          (hasWake || (stripped.split(/\s+/).length >= 3));
+
+        if (isDirectCommand && stripped.length >= 4) {
+          this._wake(text);
+          this._commitUserPrompt(stripped);
+          return;
+        }
+
+        if (hasWake) {
+          console.log('[Docy Voice] Wake trigger matched in:', text);
+          this._wake(text);
+          return;
+        }
+        return;
+      }
+
+      // 3. While paused / listening (`INTERRUPTED_LISTENING` or `AWAITING_PROMPT`)
+      if (this._isPromptMode() || this.interrupted) {
+        if (st === 'INTERRUPTED_LISTENING' && convModule?.isProceedCommand?.(text)) {
+          this._clearTranscriptDebounce();
+          this._resume();
+          return;
+        }
+
+        this.lastSpokenText = text;
+        this.pendingTranscript = text;
+        const preview = text.length > 42 ? text.slice(0, 39) + '…' : text;
+        if (st === 'AWAITING_PROMPT') {
+          updateHUDStatus(`🎙️ Hearing: "${preview}"`);
+          syncAwaitingPromptInput(text);
+        } else {
+          this._startCountdown(8, preview);
+        }
+
+        if (meta.isFinal || meta.source === 'whisper') {
+          if (convModule?.looksLikePromptOrInstruction?.(text) || text.length >= 3) {
+            this._clearTranscriptDebounce();
+            this._commitUserPrompt(text);
+          }
+        } else {
+          // Wait ~1.3s after last interim update before committing Chrome interim STT
+          clearTimeout(this.transcriptDebounceTimer);
+          this.transcriptDebounceTimer = setTimeout(() => {
+            if (this.pendingTranscript && (convModule?.looksLikePromptOrInstruction?.(this.pendingTranscript) || this.pendingTranscript.length >= 5)) {
+              this._commitUserPrompt(this.pendingTranscript);
+            }
+          }, 1300);
+        }
       }
     }
 
-    /** Stop recognition completely. Call when DocVex finishes / is stopped. */
+    _clearTranscriptDebounce() {
+      clearTimeout(this.transcriptDebounceTimer);
+      this.transcriptDebounceTimer = null;
+      this.pendingTranscript = '';
+    }
+
+    _commitUserPrompt(promptText) {
+      const cleaned = this._stripLeadingWakeWord(promptText) || String(promptText || '').trim();
+      if (!cleaned) return;
+      this._clearTranscriptDebounce();
+      this._cancelSegmentCapture();
+      this._clearTimers();
+      this.interrupted = false;
+      this.lastSpokenText = '';
+      this.lastSubmittedAt = Date.now();
+      this.lastSubmittedNormalized = convModule ? convModule.normalizeVoiceText(cleaned) : cleaned.toLowerCase();
+      submitUserPrompt(cleaned);
+    }
+
+    /** Start continuous listening when speaking or awaiting prompt. */
+    async start() {
+      if (this.userDisabled) return false;
+      await sharedModulesReady;
+      const micOk = await this.ensureMicAccess();
+      if (!micOk) return false;
+
+      if (!this.active) {
+        this.active = true;
+        console.log('[Docy Voice] Docy voice listener active.');
+      }
+
+      if (!this.recognition && !this._sttNetworkBlocked) {
+        this.init();
+      }
+      if (this.recognition && !this._sttNetworkBlocked) {
+        try {
+          this.recognition.start();
+        } catch { /* already started */ }
+      }
+      this._updateMicButton(true);
+      return true;
+    }
+
+    /** Stop listening. Keeps mic stream by default so resuming is instant unless releaseMic=true. */
     stop(releaseMic = false) {
       this.active = false;
       this.interrupted = false;
       this.lastSpokenText = '';
+      this._clearTranscriptDebounce();
+      this._cancelSegmentCapture();
       this._clearTimers();
-      if (this.vadInterval) {
-        clearInterval(this.vadInterval);
-        this.vadInterval = null;
-      }
+      this.vadDetector?.reset?.();
       try { this.recognition?.stop(); } catch { /* already stopped */ }
-      if (releaseMic && this.micStream) {
-        try {
-          this.micStream.getTracks().forEach((track) => track.stop());
+
+      if (releaseMic) {
+        if (this.vadInterval) {
+          clearInterval(this.vadInterval);
+          this.vadInterval = null;
+        }
+        if (this.micStream) {
+          try {
+            this.micStream.getTracks().forEach((track) => track.stop());
+          } catch { /* ignore */ }
           this.micStream = null;
           this.hasMicPermission = false;
-          this._updateMicButton(false);
-          if (this.audioCtx && this.audioCtx.state !== 'closed') {
-            this.audioCtx.close().catch(() => {});
-            this.audioCtx = null;
-          }
-        } catch { /* stream cleanup */ }
+        }
+        if (this.audioCtx && this.audioCtx.state !== 'closed') {
+          this.audioCtx.close().catch(() => {});
+          this.audioCtx = null;
+        }
       }
+      this._updateMicButton(this.hasMicPermission && !this.userDisabled);
     }
 
-    /** Resume if currently interrupted (called by manual resume button too). */
     forceResume() {
       if (this.interrupted) this._resume();
     }
@@ -510,15 +758,24 @@
       if (this.interrupted) return;
       this.interrupted = true;
       this.lastSpokenText = '';
+      this._clearTranscriptDebounce();
+      conversationState?.beginListening();
       pauseSpeech();
-      this._startCountdown(8);
+      this._updateMicButton(true);
+      this._startCountdown(9);
     }
 
     _resume() {
       if (!this.interrupted) return;
       this.interrupted = false;
       this.lastSpokenText = '';
+      this._clearTranscriptDebounce();
+      this._cancelSegmentCapture();
       this._clearTimers();
+      if (conversationState?.state === 'INTERRUPTED_LISTENING') {
+        conversationState.state = 'MAIN_TEACHING';
+      }
+      this._updateMicButton(true);
       resumeSpeech();
     }
 
@@ -529,6 +786,9 @@
       this._setListeningStyle(true);
 
       this.countdownInterval = setInterval(() => {
+        if (this.transcribing || this.isCapturingSpeech && this.segmentHadConfirmedSpeech) {
+          return;
+        }
         this.secondsLeft--;
         if (this.secondsLeft <= 0) {
           this._resume();
@@ -546,7 +806,7 @@
       if (spokenPreview) {
         updateHUDStatus(`🎙️ Heard: "${spokenPreview}" (resuming in ${this.secondsLeft}s)`);
       } else {
-        updateHUDStatus(`🎙️ Docy is listening… (resuming in ${this.secondsLeft}s)`);
+        updateHUDStatus(`🎙️ Docy is listening for your instruction… (${this.secondsLeft}s)`);
       }
     }
 
@@ -842,6 +1102,59 @@
         color: #cbd5e1;
         line-height: 1.6;
       }
+      .decision-banner {
+        background: #172554;
+        border: 1px solid #3b82f6;
+        border-radius: 10px;
+        padding: 10px 12px;
+        margin-bottom: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .decision-title {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #bfdbfe;
+      }
+      .decision-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .btn-proceed {
+        background: #059669;
+        color: #ffffff;
+      }
+      .btn-proceed:hover {
+        background: #047857;
+      }
+      .btn-deny {
+        background: #b45309;
+        color: #ffffff;
+      }
+      .btn-deny:hover {
+        background: #92400e;
+      }
+      .prompt-input-row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .prompt-input {
+        flex: 1;
+        background: #0f172a;
+        color: #f8fafc;
+        border: 1px solid #475569;
+        border-radius: 7px;
+        padding: 6px 9px;
+        font-size: 12px;
+        outline: none;
+      }
+      .prompt-input:focus {
+        border-color: #38bdf8;
+      }
     `;
 
     shadowRoot.appendChild(style);
@@ -851,7 +1164,7 @@
   }
 
   function closeHUD() {
-    stopCurrentTeachingSession();
+    stopCurrentTeachingSession(true, true);
     if (hudContainer && hudContainer.parentNode) {
       hudContainer.parentNode.removeChild(hudContainer);
       hudContainer = null;
@@ -999,6 +1312,12 @@
     contentDiv.textContent = '';
     existingCard.appendChild(contentDiv);
 
+    // 4b. Decision / Active Prompt Banner Container (Proceed vs Deny)
+    const decisionDiv = document.createElement('div');
+    decisionDiv.id = 'docvex-decision-container';
+    decisionDiv.style.display = 'none';
+    existingCard.appendChild(decisionDiv);
+
     // 5. Audio Controls
     const controlsDiv = document.createElement('div');
     controlsDiv.className = 'hud-controls';
@@ -1023,7 +1342,8 @@
     stopBtn.className = 'btn btn-danger';
     stopBtn.textContent = '⏹ Stop';
     stopBtn.onclick = () => {
-      stopCurrentTeachingSession();
+      stopCurrentTeachingSession(true, false);
+      hideDecisionBanner();
       updateHUDStatus('Teaching stopped.');
     };
 
@@ -1055,6 +1375,133 @@
     insightsDiv.id = 'docvex-insights-container';
     insightsDiv.style.display = 'none';
     existingCard.appendChild(insightsDiv);
+  }
+
+  function hideDecisionBanner() {
+    if (!shadowRoot) return;
+    const div = shadowRoot.querySelector('#docvex-decision-container');
+    if (div) {
+      div.replaceChildren();
+      div.style.display = 'none';
+    }
+  }
+
+  function renderContinuePromptBanner() {
+    if (!shadowRoot) return;
+    const div = shadowRoot.querySelector('#docvex-decision-container');
+    if (!div) return;
+
+    div.replaceChildren();
+    const banner = document.createElement('div');
+    banner.className = 'decision-banner';
+
+    const title = document.createElement('div');
+    title.className = 'decision-title';
+    title.textContent = 'Continue from previous explanation?';
+
+    const actions = document.createElement('div');
+    actions.className = 'decision-actions';
+
+    const proceedBtn = document.createElement('button');
+    proceedBtn.id = 'docvex-btn-proceed';
+    proceedBtn.className = 'btn btn-proceed';
+    proceedBtn.textContent = '▶ Proceed';
+    proceedBtn.onclick = () => handleProceedPrevious();
+
+    const denyBtn = document.createElement('button');
+    denyBtn.id = 'docvex-btn-deny';
+    denyBtn.className = 'btn btn-deny';
+    denyBtn.textContent = '🎙️ Deny (New Prompt)';
+    denyBtn.onclick = () => handleDenyContinue();
+
+    actions.appendChild(proceedBtn);
+    actions.appendChild(denyBtn);
+    banner.appendChild(title);
+    banner.appendChild(actions);
+    div.appendChild(banner);
+    div.style.display = 'block';
+  }
+
+  function renderAwaitingPromptBanner() {
+    if (!shadowRoot) return;
+    const div = shadowRoot.querySelector('#docvex-decision-container');
+    if (!div) return;
+
+    div.replaceChildren();
+    const banner = document.createElement('div');
+    banner.className = 'decision-banner';
+
+    const title = document.createElement('div');
+    title.className = 'decision-title';
+    title.textContent = '🎙️ Speak your new instruction or question (or type below):';
+
+    const inputRow = document.createElement('div');
+    inputRow.className = 'prompt-input-row';
+
+    const input = document.createElement('input');
+    input.id = 'docvex-prompt-input';
+    input.className = 'prompt-input';
+    input.type = 'text';
+    input.placeholder = 'e.g. Give the actual output or explain step 2…';
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter' && input.value.trim()) {
+        e.preventDefault();
+        docyInterrupt._commitUserPrompt(input.value.trim());
+      }
+    };
+
+    const sendBtn = document.createElement('button');
+    sendBtn.id = 'docvex-btn-send-prompt';
+    sendBtn.className = 'btn btn-primary';
+    sendBtn.textContent = 'Ask';
+    sendBtn.onclick = () => {
+      if (input.value.trim()) {
+        docyInterrupt._commitUserPrompt(input.value.trim());
+      } else if (docyInterrupt.isCapturingSpeech) {
+        docyInterrupt._finishSegmentCaptureAndTranscribe(true);
+      }
+    };
+
+    inputRow.appendChild(input);
+    inputRow.appendChild(sendBtn);
+
+    const actions = document.createElement('div');
+    actions.className = 'decision-actions';
+
+    const finishMicBtn = document.createElement('button');
+    finishMicBtn.id = 'docvex-btn-finish-voice';
+    finishMicBtn.className = 'btn btn-secondary';
+    finishMicBtn.textContent = '⏹ Done Speaking';
+    finishMicBtn.onclick = () => {
+      if (docyInterrupt.pendingTranscript) {
+        docyInterrupt._commitUserPrompt(docyInterrupt.pendingTranscript);
+      } else {
+        docyInterrupt._finishSegmentCaptureAndTranscribe(true);
+      }
+    };
+    actions.appendChild(finishMicBtn);
+
+    if (conversationState?.hasMainSession()) {
+      const backBtn = document.createElement('button');
+      backBtn.className = 'btn btn-proceed';
+      backBtn.textContent = '▶ Proceed Previous';
+      backBtn.onclick = () => handleProceedPrevious();
+      actions.appendChild(backBtn);
+    }
+
+    banner.appendChild(title);
+    banner.appendChild(inputRow);
+    banner.appendChild(actions);
+    div.appendChild(banner);
+    div.style.display = 'block';
+  }
+
+  function syncAwaitingPromptInput(text) {
+    if (!shadowRoot) return;
+    const input = shadowRoot.querySelector('#docvex-prompt-input');
+    if (input) {
+      input.value = text;
+    }
   }
 
   function showHUDInsightsShimmer() {
@@ -1136,52 +1583,6 @@
     sourcesDiv.style.display = 'block';
   }
 
-  // Filter out harsh, robotic novelty voices and female voices to ensure a male technical narrator voice
-  const NOVELTY_OR_ROBOTIC_VOICE_NAMES = new Set([
-    'albert', 'bad news', 'bahh', 'bells', 'boing', 'bubbles',
-    'cellos', 'deranged', 'good news', 'hysterical', 'jester',
-    'organ', 'superstar', 'trinoids', 'whisper', 'wobble', 'zarvox', 'junior', 'ralph',
-    'fred', 'grandpa'
-  ]);
-
-  const FEMALE_VOICE_NAMES = new Set([
-    'samantha', 'ava', 'serena', 'karen', 'moira', 'tessa', 'victoria', 'fiona',
-    'allison', 'susan', 'veena', 'yuri', 'kyoko', 'amelie', 'anna', 'carmit',
-    'damayanti', 'ellen', 'ioana', 'joana', 'kanya', 'katya', 'luciana', 'mariska',
-    'meijia', 'melina', 'milena', 'monica', 'nora', 'paulina', 'satu', 'sinji',
-    'tingting', 'yelda', 'yuna', 'zosia', 'zuzana', 'flo', 'grandma', 'kathy',
-    'sandy', 'shelley', 'tara', 'alice', 'alva', 'amira', 'daria', 'female'
-  ]);
-
-  const PREFERRED_MALE_VOICE_NAMES = [
-    'daniel', 'oliver', 'rishi', 'eddy', 'reed', 'rocko', 'aman', 'aaron', 'george', 'alex', 'arthur', 'tom',
-    'male', 'natural', 'neural', 'premium', 'enhanced', 'google'
-  ];
-
-  function selectBestSpeechVoice(voices) {
-    if (!voices || voices.length === 0) return null;
-    const nonFemaleVoices = voices.filter((v) => {
-      const lowerName = (v.name || '').toLowerCase();
-      const isRobotic = Array.from(NOVELTY_OR_ROBOTIC_VOICE_NAMES).some((bad) => lowerName === bad || lowerName.includes(bad));
-      const isFemale = Array.from(FEMALE_VOICE_NAMES).some((fem) => lowerName === fem || lowerName.startsWith(`${fem} `) || lowerName.includes(` ${fem}`));
-      return !isRobotic && !isFemale;
-    });
-
-    const candidatePool = nonFemaleVoices.length > 0 ? nonFemaleVoices : voices.filter((v) => {
-      const lowerName = (v.name || '').toLowerCase();
-      return !Array.from(FEMALE_VOICE_NAMES).some((fem) => lowerName === fem || lowerName.includes(fem));
-    });
-
-    const englishVoices = candidatePool.filter((v) => v.lang && v.lang.startsWith('en'));
-    const searchPool = englishVoices.length > 0 ? englishVoices : candidatePool;
-
-    for (const preferred of PREFERRED_MALE_VOICE_NAMES) {
-      const match = searchPool.find((v) => (v.name || '').toLowerCase().includes(preferred));
-      if (match) return match;
-    }
-    return searchPool[0] || null;
-  }
-
   let cachedVoices = [];
   function updateVoices() {
     if ('speechSynthesis' in window) {
@@ -1197,7 +1598,32 @@
   }
 
   // --- Speech Queue & Playback Engine ---
-  function queueSpeechSentence(sentence, index, requestId) {
+  let followUpStreamDone = false;
+  let followUpAudioStarted = false;
+
+  function onAudioQueueDrained() {
+    isSpeaking = false;
+    isPaused = false;
+    docyInterrupt.setCurrentSpeakingText('');
+    updatePlayButtonState();
+
+    if (currentSessionIsFollowUp && conversationState?.state === 'FOLLOWUP_ANSWERING') {
+      const nextState = conversationState.completeFollowUp(currentSpeechText);
+      if (nextState === 'ASK_CONTINUE') {
+        renderContinuePromptBanner();
+        updateHUDStatus('💬 Continue from previous explanation? Click Proceed or Deny.');
+        if (!docyInterrupt.userDisabled) {
+          docyInterrupt.start().catch(() => {});
+        }
+        return;
+      }
+    }
+
+    docyInterrupt.stop(false);
+    updateHUDStatus('Finished speaking.');
+  }
+
+  function queueSpeechSentence(sentence, index, requestId, mainSentenceIndex = -1) {
     if (!sentence || !('speechSynthesis' in window)) return;
     if (requestId !== activeRequestId) return; // Discard stale requests
 
@@ -1206,7 +1632,7 @@
     utterance.pitch = 1.0;
 
     const voices = cachedVoices.length > 0 ? cachedVoices : window.speechSynthesis.getVoices();
-    const naturalVoice = selectBestSpeechVoice(voices);
+    const naturalVoice = voiceSelector ? voiceSelector.selectBestSpeechVoice(voices) : (voices[0] || null);
     if (naturalVoice) {
       utterance.voice = naturalVoice;
     }
@@ -1215,6 +1641,10 @@
       if (requestId !== activeRequestId) {
         window.speechSynthesis.cancel();
         return;
+      }
+
+      if (currentSessionIsFollowUp) {
+        followUpAudioStarted = true;
       }
 
       if (index === 1 && timingMetrics.t6 === 0) {
@@ -1226,9 +1656,11 @@
       isSpeaking = true;
       isPaused = false;
       updatePlayButtonState();
-      updateHUDStatus('🔊 Speaking explanation…');
+      updateHUDStatus(currentSessionIsFollowUp ? '🗣️ Answering your instruction…' : '🔊 Speaking explanation…');
       docyInterrupt.setCurrentSpeakingText(sentence);
-      docyInterrupt.start();
+      if (!docyInterrupt.userDisabled) {
+        docyInterrupt.start().catch(() => {});
+      }
 
       if (!speechKeepAliveInterval) {
         speechKeepAliveInterval = setInterval(() => {
@@ -1246,15 +1678,14 @@
         activeUtterances.splice(idx, 1);
       }
 
+      if (requestId === activeRequestId && !currentSessionIsFollowUp && mainSentenceIndex >= 0) {
+        conversationState?.markMainSentenceCompleted(mainSentenceIndex);
+      }
+
       if (activeUtterances.length === 0 && !window.speechSynthesis.speaking) {
-        isSpeaking = false;
-        isPaused = false;
         clearInterval(speechKeepAliveInterval);
         speechKeepAliveInterval = null;
-        docyInterrupt.setCurrentSpeakingText('');
-        docyInterrupt.stop();
-        updatePlayButtonState();
-        updateHUDStatus('Finished speaking.');
+        onAudioQueueDrained();
       }
     };
 
@@ -1267,13 +1698,9 @@
         console.warn('SpeechSynthesis error:', e.error);
       }
       if (activeUtterances.length === 0 && !window.speechSynthesis.speaking) {
-        isSpeaking = false;
-        isPaused = false;
         clearInterval(speechKeepAliveInterval);
         speechKeepAliveInterval = null;
-        docyInterrupt.setCurrentSpeakingText('');
-        docyInterrupt.stop();
-        updatePlayButtonState();
+        onAudioQueueDrained();
       }
     };
 
@@ -1311,7 +1738,9 @@
       updatePlayButtonState();
       updateHUDStatus('🔊 Speaking with local Chatterbox…');
       docyInterrupt.setCurrentSpeakingText(item.sentence || item.speechText || '');
-      docyInterrupt.start();
+      if (!docyInterrupt.userDisabled) {
+        docyInterrupt.start().catch(() => {});
+      }
     };
 
     const finish = () => {
@@ -1322,12 +1751,7 @@
       if (item.requestId === activeRequestId) {
         playNextChatterboxAudio();
         if (!isChatterboxPlaying && chatterboxAudioQueue.length === 0) {
-          isSpeaking = false;
-          isPaused = false;
-          docyInterrupt.setCurrentSpeakingText('');
-          docyInterrupt.stop();
-          updatePlayButtonState();
-          updateHUDStatus('Finished speaking.');
+          onAudioQueueDrained();
         }
       }
     };
@@ -1387,25 +1811,29 @@
   }
 
   function resumeSpeech() {
+    let resumed = false;
     if (chatterboxEnabled && activePort && isPaused) {
       activePort.postMessage({ action: 'RESUME_AUDIO' });
       isPaused = false;
       updatePlayButtonState();
-      updateHUDStatus('🔊 Speaking with local Chatterbox…');
-      return;
-    }
-    if (activeAudio && isPaused) {
+      updateHUDStatus('🔊 Speaking with local Chatterbox… (Docy listening)');
+      resumed = true;
+    } else if (activeAudio && isPaused) {
       activeAudio.play().catch(() => {});
       isPaused = false;
       updatePlayButtonState();
-      updateHUDStatus('🔊 Speaking with local Chatterbox…');
-      return;
-    }
-    if (window.speechSynthesis && window.speechSynthesis.paused) {
+      updateHUDStatus('🔊 Speaking with local Chatterbox… (Docy listening)');
+      resumed = true;
+    } else if (window.speechSynthesis && window.speechSynthesis.paused) {
       window.speechSynthesis.resume();
       isPaused = false;
       updatePlayButtonState();
-      updateHUDStatus('🔊 Speaking explanation…');
+      updateHUDStatus('🔊 Speaking explanation… (Docy listening)');
+      resumed = true;
+    }
+
+    if (resumed && !docyInterrupt.userDisabled) {
+      docyInterrupt.start().catch(() => {});
     }
   }
 
@@ -1428,19 +1856,19 @@
   }
 
   function startSpeechQueueFromText(fullText) {
-    stopSpeech();
+    stopSpeech(false);
     const sentences = fullText.match(/[^.!?]+[.!?]+(\s|$)/g) || [fullText];
     const currentReq = activeRequestId || 'local_replay';
     sentences.forEach((s, idx) => {
-      const cleaned = shapeSpeechText(s);
+      const cleaned = safeShapeSpeechText(s);
       if (cleaned) {
         queueSpeechSentence(cleaned, idx + 1, currentReq);
       }
     });
   }
 
-  function stopCurrentTeachingSession() {
-    stopSpeech(true);
+  function resetStreamingTransportOnly(releaseMic = false) {
+    stopSpeech(releaseMic);
     if (activePort) {
       try {
         activePort.postMessage({ action: 'ABORT_STREAM', requestId: activeRequestId });
@@ -1459,41 +1887,119 @@
     updatePlayButtonState();
   }
 
+  function stopCurrentTeachingSession(resetConversation = true, releaseMic = false) {
+    resetStreamingTransportOnly(releaseMic);
+    currentSessionIsFollowUp = false;
+    currentSessionResumeOffset = 0;
+    if (resetConversation) {
+      conversationState?.reset();
+    }
+  }
+
+  async function enterActivePromptListening() {
+    await sharedModulesReady;
+    resetStreamingTransportOnly(false);
+    conversationState?.denyContinue();
+    docyInterrupt.userDisabled = false;
+    renderAwaitingPromptBanner();
+    updateHUDStatus('🎙️ Listening for your instruction or question…');
+    const started = await docyInterrupt.start();
+    if (started) {
+      docyInterrupt._setListeningStyle(true);
+    }
+  }
+
+  function handleDenyContinue() {
+    enterActivePromptListening();
+  }
+
+  function handleProceedPrevious() {
+    hideDecisionBanner();
+    if (!conversationState || !conversationState.hasMainSession()) {
+      resumeSpeech();
+      return;
+    }
+    const resumeData = conversationState.proceedMainSession();
+    if (resumeData.remainingSentences && resumeData.remainingSentences.length > 0) {
+      triggerTeaching(null, {
+        continueSentences: resumeData.remainingSentences,
+        restoredText: resumeData.fullText,
+        resumeFromIndex: resumeData.resumeFromIndex,
+      });
+    } else if (resumeData.fullText) {
+      updateHUDExplanation(resumeData.fullText);
+      updateHUDStatus('✅ Back to previous explanation.');
+    }
+  }
+
+  function submitUserPrompt(promptText) {
+    const cleanPrompt = String(promptText || '').trim();
+    if (!cleanPrompt) return;
+    hideDecisionBanner();
+    const followUpContext = conversationState ? conversationState.getFollowUpContext() : currentSpeechText;
+    const followUpSelectedText = conversationState?.mainSession?.selectedText || '';
+    conversationState?.startFollowUp(cleanPrompt);
+    triggerTeaching(cleanPrompt, {
+      isFollowUp: true,
+      followUpContext,
+      followUpSelectedText,
+    });
+  }
+
   // --- Main Teaching Flow ---
   let lastTriggerTime = 0;
 
-  function triggerTeaching(selectionOverride = null) {
+  async function triggerTeaching(selectionOverride = null, flowOpts = {}) {
+    await sharedModulesReady;
+
+    const isFollowUp = Boolean(flowOpts.isFollowUp);
+    const continueSentences = Array.isArray(flowOpts.continueSentences) ? flowOpts.continueSentences : [];
+    const isContinueResume = continueSentences.length > 0;
+
     const now = performance.now();
-    if (now - lastTriggerTime < 500) {
+    if (!isFollowUp && !isContinueResume && now - lastTriggerTime < 500) {
       return;
     }
     lastTriggerTime = now;
 
     let selectedText = (selectionOverride || '').trim();
-    if (!selectedText) {
-      selectedText = (window.getSelection() ? window.getSelection().toString() : '').trim();
-    }
-    if (!selectedText && document.activeElement) {
-      const el = document.activeElement;
-      if ((el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && typeof el.selectionStart === 'number') {
-        selectedText = (el.value || '').substring(el.selectionStart, el.selectionEnd).trim();
+    if (!isContinueResume) {
+      if (!selectedText) {
+        selectedText = (window.getSelection() ? window.getSelection().toString() : '').trim();
+      }
+      if (!selectedText && document.activeElement) {
+        const el = document.activeElement;
+        if ((el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && typeof el.selectionStart === 'number') {
+          selectedText = (el.value || '').substring(el.selectionStart, el.selectionEnd).trim();
+        }
+      }
+
+      if (!selectedText) {
+        renderHUDSkeleton({
+          status: 'No text selected',
+          error: 'Select some text on the webpage first, then press Ctrl+Shift+S.',
+        });
+        return;
       }
     }
 
-    if (!selectedText) {
-      renderHUDSkeleton({
-        status: 'No text selected',
-        error: 'Select some text on the webpage first, then press Ctrl+Shift+S.',
-      });
-      return;
+    // 1. Preserve main session across follow-ups & resumes; reset only on fresh selection
+    if (isFollowUp || isContinueResume) {
+      resetStreamingTransportOnly(false);
+    } else {
+      stopCurrentTeachingSession(true, false);
+      conversationState?.startMainSession({ selectedText });
     }
 
-    // 1. Invalidate any existing session and stop active speech immediately
-    stopCurrentTeachingSession();
+    currentSessionIsFollowUp = isFollowUp;
+    currentSessionResumeOffset = isContinueResume ? Number(flowOpts.resumeFromIndex || 0) : 0;
+    followUpStreamDone = false;
+    followUpAudioStarted = false;
 
     // 2. Setup new session ID & timing
     const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     activeRequestId = requestId;
+    let activePlayingChatterboxIdx = -1;
 
     timingMetrics = {
       t0: performance.now(),
@@ -1503,31 +2009,48 @@
       t7: 0,
     };
 
-    renderHUDSkeleton({
-      status: 'Understanding selected text…',
-    });
+    const initialStatus = isFollowUp
+      ? `💭 Answering: "${selectedText.length > 40 ? selectedText.slice(0, 37) + '…' : selectedText}"`
+      : (isContinueResume ? '▶ Continuing from previous explanation…' : 'Understanding selected text…');
+
+    renderHUDSkeleton({ status: initialStatus });
+    if (isContinueResume && flowOpts.restoredText) {
+      currentSpeechText = flowOpts.restoredText;
+      updateHUDExplanation(flowOpts.restoredText);
+    }
 
     let accumulatedText = '';
-    currentSpeechText = '';
+    if (!isContinueResume) {
+      currentSpeechText = '';
+    }
 
-    // 3. Initialize SentenceBuffer for this session
-    const sentenceBuffer = new ClientSentenceBuffer({
-      minSentenceLength: 4,
-      onSentence: (sentence, index) => {
-        if (requestId !== activeRequestId) return;
+    const SentenceBufferClass = speechCore?.SentenceBuffer;
+    const sentenceBuffer = SentenceBufferClass
+      ? new SentenceBufferClass({
+          minSentenceLength: 4,
+          onSentence: (sentence, index) => {
+            if (requestId !== activeRequestId) return;
 
-        if (index === 1 && timingMetrics.t5 === 0) {
-          timingMetrics.t5 = performance.now();
-          const latencyT5 = Math.round(timingMetrics.t5 - timingMetrics.t0);
-          console.log(`[DocVex Timing] First Complete Sentence (T0->T5): ${latencyT5}ms: "${sentence}"`);
-        }
+            if (index === 1 && timingMetrics.t5 === 0) {
+              timingMetrics.t5 = performance.now();
+              const latencyT5 = Math.round(timingMetrics.t5 - timingMetrics.t0);
+              console.log(`[DocVex Timing] First Complete Sentence (T0->T5): ${latencyT5}ms: "${sentence}"`);
+            }
 
-        // Chatterbox audio arrives through the background worker; use browser speech only as fallback.
-        if (!chatterboxEnabled) {
-          queueSpeechSentence(sentence, index, requestId);
-        }
-      },
-    });
+            let localMainIndex = -1;
+            if (!isFollowUp && !isContinueResume && conversationState) {
+              localMainIndex = conversationState.recordMainSentence(sentence);
+            } else if (isContinueResume) {
+              localMainIndex = currentSessionResumeOffset + (index - 1);
+            }
+
+            // Chatterbox audio arrives through the background worker; use browser speech only as fallback.
+            if (!chatterboxEnabled) {
+              queueSpeechSentence(sentence, index, requestId, localMainIndex);
+            }
+          },
+        })
+      : null;
 
     // 4. Connect bidirectional port to background service worker
     try {
@@ -1551,14 +2074,14 @@
 
         if (event === 'metadata') {
           chatterboxEnabled = Boolean(data.chatterbox?.enabled);
-          updateHUDStatus('🎓 Analyzing concepts…');
+          updateHUDStatus(isFollowUp ? '🗣️ Preparing answer…' : (isContinueResume ? '▶ Resuming voice…' : '🎓 Analyzing concepts…'));
           if (data.groundingStatus) {
             updateHUDBadge(data.groundingStatus);
           }
           if (data.groundingStatus === 'grounded' && Array.isArray(data.sources)) {
             renderHUDSources(data.sources);
           }
-          if (data.isHybrid) {
+          if (data.isHybrid && !isFollowUp && !isContinueResume) {
             showHUDInsightsShimmer();
           }
         } else if (event === 'token') {
@@ -1566,32 +2089,34 @@
             timingMetrics.t4 = performance.now();
             const latencyT4 = Math.round(timingMetrics.t4 - timingMetrics.t0);
             console.log(`[DocVex Timing] First Token (T0->T4): ${latencyT4}ms`);
-            updateHUDStatus('✍️ Explaining…');
+            updateHUDStatus(isFollowUp ? '✍️ Answering…' : (isContinueResume ? '▶ Continuing explanation…' : '✍️ Explaining…'));
           }
 
           accumulatedText += data.token;
-          currentSpeechText = accumulatedText;
-          updateHUDExplanation(accumulatedText);
-          sentenceBuffer.addToken(data.token);
+          if (!isContinueResume) {
+            currentSpeechText = accumulatedText;
+            updateHUDExplanation(accumulatedText);
+          }
+          sentenceBuffer?.addToken(data.token);
         } else if (event === 'speech_done') {
-          // Voice explanation stream finished; flush speech buffer so all sentences play cleanly
-          sentenceBuffer.flush();
+          sentenceBuffer?.flush();
           if (!isSpeaking) {
             updateHUDStatus(chatterboxEnabled ? '🎙️ Synthesizing voice with Chatterbox…' : '🔊 Speaking explanation…');
           }
-          if (data.explanation) {
+          if (data.explanation && !isContinueResume) {
             currentSpeechText = data.explanation;
             updateHUDExplanation(data.explanation);
           }
         } else if (event === 'local_insights') {
-          // Background Ollama deep-dive reasoning completed
           if (data.insights) {
             renderHUDInsights(data.insights);
           }
         } else if (event === 'audio_error') {
           console.error('[DocVex audio_error event]', data);
           if (data.sentence && data.requestId === activeRequestId) {
-            queueSpeechSentence(data.sentence, data.sentenceIndex, data.requestId);
+            const rawIdx = Number(data.sentenceIndex ?? 1);
+            const mappedIdx = isFollowUp ? -1 : (isContinueResume ? currentSessionResumeOffset + rawIdx : Math.max(0, rawIdx - 1));
+            queueSpeechSentence(data.sentence, data.sentenceIndex, data.requestId, mappedIdx);
             updateHUDStatus('Local Chatterbox audio failed; using browser speech fallback.');
           }
         } else if (event === 'done') {
@@ -1599,14 +2124,18 @@
           const latencyT7 = Math.round(timingMetrics.t7 - timingMetrics.t0);
           console.log(`[DocVex Timing] Full Generation Finished (T0->T7): ${latencyT7}ms`);
 
-          // Flush any remaining characters in the sentence buffer
-          sentenceBuffer.flush();
+          sentenceBuffer?.flush();
+
+          if (!isFollowUp && !isContinueResume && conversationState) {
+            conversationState.setMainFullText(data.explanation || currentSpeechText);
+            conversationState.markMainStreamDone();
+          }
 
           if (data.groundingStatus) {
             updateHUDBadge(data.groundingStatus);
           }
 
-          if (data.explanation) {
+          if (data.explanation && !isContinueResume) {
             currentSpeechText = data.explanation;
             updateHUDExplanation(data.explanation);
           }
@@ -1617,6 +2146,14 @@
 
           if (data.groundingStatus === 'grounded' && Array.isArray(data.sources)) {
             renderHUDSources(data.sources);
+          }
+
+          if (isFollowUp) {
+            followUpStreamDone = true;
+            if (!isSpeaking && chatterboxAudioQueue.length === 0 && activeUtterances.length === 0 && (!chatterboxEnabled || !followUpAudioStarted)) {
+              onAudioQueueDrained();
+              return;
+            }
           }
 
           if (!chatterboxEnabled && !isSpeaking) {
@@ -1625,10 +2162,9 @@
             updateHUDStatus('🎙️ Synthesizing voice with Chatterbox…');
           }
         } else if (event === 'error') {
-          // Groq overloaded / rate-limited \u2014 show a recoverable status, not a red error
           const isOverload = data.statusCode === 503 || data.statusCode === 429;
           if (isOverload) {
-            updateHUDStatus('⚡ Groq overloaded \u2014 switching to Ollama fallback…');
+            updateHUDStatus('⚡ Groq overloaded — switching to Ollama fallback…');
           } else {
             renderHUDSkeleton({
               status: 'Error',
@@ -1640,6 +2176,12 @@
         const data = msg.data || {};
         if (msg.requestId !== activeRequestId) return;
         if (msg.event === 'started') {
+          if (currentSessionIsFollowUp) {
+            followUpAudioStarted = true;
+          }
+          if (typeof data.sentenceIndex === 'number') {
+            activePlayingChatterboxIdx = data.sentenceIndex;
+          }
           if (timingMetrics.t6 === 0) {
             timingMetrics.t6 = performance.now();
             console.log(`[DocVex Timing] Chatterbox Playback Started (T0->T6): ${Math.round(timingMetrics.t6 - timingMetrics.t0)}ms`);
@@ -1647,28 +2189,41 @@
           isSpeaking = true;
           isPaused = false;
           updatePlayButtonState();
-          updateHUDStatus(`🔊 Speaking with local Chatterbox… (sentence ${data.sentenceIndex || 1})`);
+          updateHUDStatus(
+            currentSessionIsFollowUp
+              ? '🗣️ Answering with Chatterbox…'
+              : `🔊 Speaking with local Chatterbox… (sentence ${data.sentenceIndex || 1})`
+          );
           docyInterrupt.setCurrentSpeakingText(data.sentence || data.speechText || '');
-          docyInterrupt.start();
+          if (!docyInterrupt.userDisabled) {
+            docyInterrupt.start().catch(() => {});
+          }
         } else if (msg.event === 'ended') {
+          const endedRawIdx = typeof data.sentenceIndex === 'number' ? data.sentenceIndex : activePlayingChatterboxIdx;
+          if (!isFollowUp && conversationState && endedRawIdx >= 0) {
+            const completedIdx = isContinueResume
+              ? currentSessionResumeOffset + endedRawIdx
+              : Math.max(0, endedRawIdx - 1);
+            conversationState.markMainSentenceCompleted(completedIdx);
+          }
+
           if (data.hasMore) {
-            updateHUDStatus('🔊 Speaking with local Chatterbox…');
+            updateHUDStatus(currentSessionIsFollowUp ? '🗣️ Answering with Chatterbox…' : '🔊 Speaking with local Chatterbox…');
           } else {
-            isSpeaking = false;
-            isPaused = false;
-            docyInterrupt.setCurrentSpeakingText('');
-            docyInterrupt.stop();
-            updatePlayButtonState();
-            updateHUDStatus('Explanation complete.');
+            onAudioQueueDrained();
           }
         } else if (msg.event === 'error') {
-          queueSpeechSentence(data.sentence, data.sentenceIndex, msg.requestId);
+          const rawIdx = Number(data.sentenceIndex ?? 1);
+          const mappedIdx = isFollowUp ? -1 : (isContinueResume ? currentSessionResumeOffset + rawIdx : Math.max(0, rawIdx - 1));
+          queueSpeechSentence(data.sentence, data.sentenceIndex, msg.requestId, mappedIdx);
           updateHUDStatus('Local Chatterbox audio failed; using browser speech fallback.');
         }
       } else if (msg.action === 'AUDIO_ERROR') {
         const data = msg.data || {};
         if (data.sentence && msg.requestId === activeRequestId) {
-          queueSpeechSentence(data.sentence, data.sentenceIndex, msg.requestId);
+          const rawIdx = Number(data.sentenceIndex ?? 1);
+          const mappedIdx = isFollowUp ? -1 : (isContinueResume ? currentSessionResumeOffset + rawIdx : Math.max(0, rawIdx - 1));
+          queueSpeechSentence(data.sentence, data.sentenceIndex, msg.requestId, mappedIdx);
           updateHUDStatus('Local Chatterbox audio failed; using browser speech fallback.');
         }
       } else if (msg.action === 'STREAM_ERROR') {
@@ -1714,11 +2269,17 @@
     const sendStreamRequest = (preferredProvider) => {
       if (!activePort || requestId !== activeRequestId) return;
       const payload = {
-        text: selectedText,
+        text: isContinueResume ? 'Continue previous explanation.' : selectedText,
         title: document.title || '',
         url: window.location.href || '',
         pageContext: extractSurroundingContext(),
         ...(preferredProvider ? { provider: preferredProvider } : {}),
+        ...(isFollowUp ? {
+          isFollowUp: true,
+          followUpContext: flowOpts.followUpContext || '',
+          followUpSelectedText: flowOpts.followUpSelectedText || '',
+        } : {}),
+        ...(isContinueResume ? { continueSentences } : {}),
       };
 
       activePort.postMessage({

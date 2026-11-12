@@ -60,6 +60,20 @@ Strict Voiceover Directing Rules:
 - First-Sentence Latency Rule: Keep Sentence 1 punchy and concise (10 to 18 words) stating the core anchor immediately. A crisp opening sentence allows the neural audio synthesizer to start audible speech in under two seconds while subsequent sentences pipeline behind it.
 - Stop speaking once the core mental model is crystal clear.`;
 
+export const DOCY_FOLLOWUP_SYSTEM_PROMPT = `You are Docy, the DocVex voice assistant. The student just paused or spoke to give you an instruction or ask a follow-up question grounded in the highlighted material and previous explanation.
+
+Your job right now:
+- Follow their instruction or answer their specific question directly with concrete facts and actual outputs (do NOT dodge or re-lecture the whole page).
+- If they ask to trace, compute, show an example, check behavior, or tell the actual output inspired by the highlighted text/code or previous context, walk directly to the exact output or concrete result clearly and accurately.
+- Sound warm, natural, crisp, and direct — start answering immediately.
+- Weave in the provided "Highlighted context" and "Previous explanation context" when relevant, without repeating what you already said.
+- Keep it tight: 2 to 5 spoken sentences unless they explicitly asked for deeper detail.
+
+Delivery rules:
+- Plain spoken sentences only. No bullet points, no markdown, no code fences.
+- Read symbol names and outputs cleanly so text-to-speech pronounces them accurately.
+- Never start with "Sure", "Great question", "Certainly", or assistant filler.`;
+
 /**
  * Assembles the user-turn prompt and reports, honestly, whether any real
  * evidence backs it.
@@ -171,3 +185,28 @@ export const shapeSpeechText = (text) => {
 
   return spoken.trim();
 };
+
+/**
+ * Builds the focused prompt for interactive voice instructions and follow-up questions.
+ * Anchors the response on both the highlighted passage and the previous explanation context.
+ */
+export function buildFollowUpPrompt({ followUpQuestion, previousContext = '', selectedText = '' }) {
+  const question = (followUpQuestion || '').trim();
+  const context = (previousContext || '').trim();
+  const snippet = (selectedText || '').trim();
+
+  let prompt = `Student instruction or follow-up question: "${question}"\n`;
+
+  if (snippet.length > 0) {
+    const cappedSnippet = snippet.length > 1000 ? snippet.slice(0, 980) + '…' : snippet;
+    prompt += `\nHighlighted context the student is referring to:\n"${cappedSnippet}"\n`;
+  }
+
+  if (context.length > 0) {
+    const cappedContext = context.length > 1100 ? context.slice(context.length - 1080) : context;
+    prompt += `\nPrevious explanation context:\n"${cappedContext}"\n`;
+  }
+
+  prompt += '\nFollow the student instruction or answer the question directly, giving the actual output or exact answer clearly without re-explaining unrelated parts.';
+  return prompt;
+}

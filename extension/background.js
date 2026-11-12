@@ -130,6 +130,38 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // Keep message channel open for async response
   }
 
+  if (request.action === 'TRANSCRIBE_AUDIO') {
+    fetch(`${BACKEND_URL}/transcribe`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request.payload || {}),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          sendResponse({
+            success: false,
+            error: data.error || `Transcription error (${res.status})`,
+          });
+        } else {
+          sendResponse({
+            success: true,
+            data,
+          });
+        }
+      })
+      .catch(() => {
+        sendResponse({
+          success: false,
+          error: 'Cannot connect to DocVex transcription backend on http://127.0.0.1:3000',
+        });
+      });
+
+    return true;
+  }
+
   if (request.action === 'CHECK_HEALTH') {
     fetch(`${BACKEND_URL}/health`)
       .then(async (res) => {
