@@ -294,3 +294,102 @@ export const streamGroq = async ({
   err.statusCode = 503;
   throw err;
 };
+
+const AUDIO_EXTENSION_BY_MIME = Object.freeze({
+  'audio/webm': 'webm',
+  'audio/ogg': 'ogg',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/mp4': 'm4a',
+  'audio/m4a': 'm4a',
+});
+
+function resolveAudioFilename(mimeType, explicitFileName) {
+  if (explicitFileName && typeof explicitFileName === 'string' && explicitFileName.trim()) {
+    return explicitFileName.trim();
+  }
+  const baseMime = String(mimeType || 'audio/webm').split(';')[0].trim().toLowerCase();
+  const ext = AUDIO_EXTENSION_BY_MIME[baseMime] || 'webm';
+  return `speech.${ext}`;
+}
+
+/**
+ * Transcribe recorded user speech via Groq's OpenAI-compatible Whisper endpoint.
+ * Used when browser-native SpeechRecognition is blocked (e.g., Brave browser) or offline.
+ */
+export const transcribeAudioWithGroq = async ({
+  audioBuffer,
+  mimeType = 'audio/webm',
+  fileName = '',
+  apiKey,
+  model = 'whisper-large-v3-turbo',
+  language = 'en',
+  timeoutMs = 20000,
+  fetchFn = fetch,
+}) => {
+  const key = apiKey || process.env.GROQ_API_KEY;
+  if (!key || typeof key !== 'string' || key.trim().length === 0) {
+    const error = new Error('Groq API key is missing. Set GROQ_API_KEY in the backend environment.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!audioBuffer || audioBuffer.length === 0) {
+    const error = new Error('Audio payload is empty.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const normalizedMime = String(mimeType || 'audio/webm').split(';')[0].trim() || 'audio/webm';
+  const resolvedName = resolveAudioFilename(normalizedMime, fileName);
+
+  const form = new FormData();
+  form.append('file', new Blob([audioBuffer], { type: normalizedMime }), resolvedName);
+  form.append('model', model);
+  form.append('response_format', 'json');
+  if (language && typeof language === 'string' && language.trim()) {
+    form.append('language', language.trim());
+  }
+
+  const endpoint = 'https://api.groq.com/openai/v1/audio/transcriptions';
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetchFn(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key.trim()}`,
+      },
+      body: form,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const msg = errorData?.error?.message || `Groq transcription error (${response.status}).`;
+      const error = new Error(msg);
+      error.statusCode = response.status >= 500 ? 502 : response.status;
+      throw error;
+    }
+
+    const data = await response.json();
+    const text = String(data?.text || '').trim();
+    return {
+      text,
+      provider: 'groq-whisper',
+      model,
+    };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      const timeoutError = new Error(`Groq transcription timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
+      timeoutError.statusCode = 504;
+      throw timeoutError;
+    }
+    throw err;
+  }
+};

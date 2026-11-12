@@ -1,4 +1,4 @@
-import { buildTeachingPrompt, buildFollowUpPrompt, shapeSpeechText, TEACHER_SYSTEM_PROMPT, DOCY_FOLLOWUP_SYSTEM_PROMPT } from './prompt/teacherPrompt.js';
+
 import { buildReasoningPrompt, OLLAMA_REASONING_SYSTEM_PROMPT } from './prompt/reasoningPrompt.js';
 import { generateExplanation, streamExplanation } from './providers/providerFactory.js';
 import { ChatterboxProvider } from './providers/chatterboxProvider.js';
