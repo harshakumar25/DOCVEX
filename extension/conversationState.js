@@ -282,4 +282,3 @@ export class DocyConversationState {
     return combined.slice(combined.length - maxChars);
   }
 }
-
