@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "lawbuddy-verify",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["CHATTERBOX_ENABLED=false", "node", "--disable-warning=ExperimentalWarning", "packages/docvex/server/server.js"],
+      "port": 3011,
+      "autoPort": true
+    }
+  ]
+}

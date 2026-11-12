@@ -1,0 +1,114 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import {
+  isBannedRoboticVoice,
+  scoreSpeechVoice,
+  selectBestSpeechVoice,
+  BANNED_ROBOTIC_VOICE_NAMES
+} from '../../extension/voiceSelector.js';
+
+test('isBannedRoboticVoice: detects and flags harsh/robotic voices', () => {
+  assert.equal(isBannedRoboticVoice('Daniel'), true, 'Daniel must be banned');
+  assert.equal(isBannedRoboticVoice('Daniel (en-GB)'), true, 'Daniel with locale must be banned');
+  assert.equal(isBannedRoboticVoice('Alex'), true, 'Alex must be banned');
+  assert.equal(isBannedRoboticVoice('Alex (en-US)'), true, 'Alex with locale must be banned');
+  assert.equal(isBannedRoboticVoice('Fred'), true, 'Fred must be banned');
+  assert.equal(isBannedRoboticVoice('Albert'), true, 'Albert must be banned');
+  assert.equal(isBannedRoboticVoice('Zarvox'), true, 'Zarvox must be banned');
+  assert.equal(isBannedRoboticVoice('Eddy'), true, 'Eddy must be banned');
+  assert.equal(isBannedRoboticVoice('Rocko'), true, 'Rocko must be banned');
+
+  // Must not flag legitimate names
+  assert.equal(isBannedRoboticVoice('Samantha'), false);
+  assert.equal(isBannedRoboticVoice('Google US English'), false);
+  assert.equal(isBannedRoboticVoice('Ava (Enhanced)'), false);
+  assert.equal(isBannedRoboticVoice('Alexander'), false);
+});
+
+test('scoreSpeechVoice: gives negative scores to robotic and compact voices', () => {
+  const danielScore = scoreSpeechVoice({ name: 'Daniel', lang: 'en-GB' });
+  assert.equal(danielScore, -1000, 'Daniel must score -1000');
+
+  const alexScore = scoreSpeechVoice({ name: 'Alex', lang: 'en-US' });
+  assert.equal(alexScore, -1000, 'Alex must score -1000');
+
+  const compactScore = scoreSpeechVoice({ name: 'Oliver (Compact)', lang: 'en-GB' });
+  const enhancedScore = scoreSpeechVoice({ name: 'Oliver (Enhanced)', lang: 'en-US' });
+  assert.ok(enhancedScore > compactScore, 'Enhanced voices must vastly outscore compact voices');
+});
+
+test('selectBestSpeechVoice: never selects Alex or Daniel even when first in the list', () => {
+  const macVoices = [
+    { name: 'Daniel', lang: 'en-GB', default: true },
+    { name: 'Alex', lang: 'en-US', default: false },
+    { name: 'Fred', lang: 'en-US', default: false },
+    { name: 'Victoria', lang: 'en-US', default: false },
+    { name: 'Samantha', lang: 'en-US', default: false },
+  ];
+
+  const selected = selectBestSpeechVoice(macVoices);
+  assert.ok(selected, 'Must select a voice');
+  assert.notEqual(selected.name, 'Daniel', 'Must NEVER select Daniel');
+  assert.notEqual(selected.name, 'Alex', 'Must NEVER select Alex');
+  assert.notEqual(selected.name, 'Fred', 'Must NEVER select Fred');
+  assert.equal(selected.name, 'Samantha', 'Must select Samantha');
+});
+
+test('selectBestSpeechVoice: prioritizes modern neural and enhanced voices', () => {
+  const chromeVoices = [
+    { name: 'Alex', lang: 'en-US' },
+    { name: 'Daniel', lang: 'en-GB' },
+    { name: 'Samantha (Compact)', lang: 'en-US' },
+    { name: 'Google US English', lang: 'en-US' },
+  ];
+
+  const selected = selectBestSpeechVoice(chromeVoices);
+  assert.equal(selected.name, 'Google US English', 'Must prioritize Google US English');
+
+  const appleVoices = [
+    { name: 'Alex', lang: 'en-US' },
+    { name: 'Samantha', lang: 'en-US' },
+    { name: 'Ava (Enhanced)', lang: 'en-US' },
+  ];
+
+  const selectedApple = selectBestSpeechVoice(appleVoices);
+  assert.equal(selectedApple.name, 'Ava (Enhanced)', 'Must prioritize Ava (Enhanced)');
+});
+
+test('selectBestSpeechVoice: returns null or non-banned voice if only banned voices are present', () => {
+  const bannedOnly = [
+    { name: 'Alex', lang: 'en-US' },
+    { name: 'Fred', lang: 'en-US' },
+    { name: 'Albert', lang: 'en-US' },
+  ];
+
+  const selected = selectBestSpeechVoice(bannedOnly);
+  assert.equal(selected, null, 'Must return null rather than speaking with a banned robotic voice');
+});
+
+test('LawBuddy teach page reads answers only with an allowed voice, never the browser default', async () => {
+  const teachCandidates = [
+    new URL('../../node_modules/@docvex/lawbuddy/web/teach.js', import.meta.url),
+    new URL('../../../lawbuddy/web/teach.js', import.meta.url),
+    new URL('../../web/lawbuddy/teach.js', import.meta.url),
+  ];
+  const teachUrl = teachCandidates.find((u) => existsSync(u));
+  assert.ok(teachUrl, 'LawBuddy teach.js must exist');
+  const teach = await readFile(teachUrl, 'utf8');
+  assert.match(teach, /import \{ selectBestSpeechVoice \} from '\.\/voiceSelector\.js'/);
+  assert.match(teach, /utterance\.voice = chosen/, 'the chosen voice must be set explicitly');
+  assert.match(teach, /if \(!chosen\) \{\s*resolve\(\);\s*return;/, 'with no allowed voice it stays silent');
+
+  // The voices macOS offers for English, with Daniel listed first as the system default
+  const macVoices = [
+    { name: 'Daniel', lang: 'en-GB', default: true },
+    { name: 'Rishi', lang: 'en-IN' },
+    { name: 'Aman', lang: 'en-IN' },
+    { name: 'Eddy (English (UK))', lang: 'en-GB' },
+    { name: 'Samantha', lang: 'en-US' },
+  ];
+  assert.equal(selectBestSpeechVoice(macVoices).name, 'Samantha');
+  assert.equal(selectBestSpeechVoice([{ name: 'Daniel', lang: 'en-GB', default: true }]), null);
+});

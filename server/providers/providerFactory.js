@@ -66,6 +66,8 @@ export const streamExplanation = async ({
       systemPrompt,
       apiKey: options.GROQ_API_KEY,
       model: options.GROQ_MODEL,
+      maxTokens: options.GROQ_MAX_TOKENS,
+      reasoningEffort: options.GROQ_REASONING_EFFORT,
       signal,
       onToken,
       fetchFn: options.fetchFn,

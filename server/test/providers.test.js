@@ -42,16 +42,24 @@ test('buildTeachingUserPrompt builds comprehensive context', () => {
 });
 
 test('callGroq rejects missing API key with clear message', async () => {
-  await assert.rejects(
-    async () => {
-      await callGroq({ prompt: 'Hello', apiKey: '' });
-    },
-    (err) => {
-      assert.equal(err.statusCode, 400);
-      assert.ok(err.message.includes('Groq API key is missing'));
-      return true;
-    }
-  );
+  // The provider falls back to process.env.GROQ_API_KEY (loaded from .env), so hide it:
+  // otherwise this test makes a real Groq call whenever a developer has a key configured.
+  const savedKey = process.env.GROQ_API_KEY;
+  delete process.env.GROQ_API_KEY;
+  try {
+    await assert.rejects(
+      async () => {
+        await callGroq({ prompt: 'Hello', apiKey: '' });
+      },
+      (err) => {
+        assert.equal(err.statusCode, 400);
+        assert.ok(err.message.includes('Groq API key is missing'));
+        return true;
+      }
+    );
+  } finally {
+    if (savedKey !== undefined) process.env.GROQ_API_KEY = savedKey;
+  }
 });
 
 test('callOllama returns actionable error when host is unreachable', async () => {

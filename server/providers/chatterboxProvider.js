@@ -5,6 +5,23 @@ import fs from 'node:fs/promises';
 const MODEL_NAMES = new Set(['standard', 'turbo', 'nano']);
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 
+const STDERR_TAIL_LINES = 20;
+
+// Single-source-of-truth mapping between server config keys, provider fields, and worker CLI flags.
+export const CHATTERBOX_OPTION_SPEC = Object.freeze([
+  { configKey: 'CHATTERBOX_MODEL', prop: 'model', flag: '--model', defaultValue: '' },
+  { configKey: 'CHATTERBOX_DEVICE', prop: 'device', flag: '--device', defaultValue: 'auto' },
+  { configKey: 'CHATTERBOX_TEMP_DIR', prop: 'tempDir', flag: '--temp-dir', defaultValue: '' },
+  { configKey: 'CHATTERBOX_VOICE_PROMPT', prop: 'voicePrompt', flag: '--voice-prompt', defaultValue: '', optional: true },
+  { configKey: 'CHATTERBOX_CFM_STEPS', prop: 'cfmSteps', flag: '--cfm-steps', defaultValue: 8 },
+  { configKey: 'CHATTERBOX_TEMPERATURE', prop: 'temperature', flag: '--temperature', defaultValue: 0.65 },
+  { configKey: 'CHATTERBOX_TOP_K', prop: 'topK', flag: '--top-k', defaultValue: 500 },
+  { configKey: 'CHATTERBOX_TOP_P', prop: 'topP', flag: '--top-p', defaultValue: 0.90 },
+  { configKey: 'CHATTERBOX_REP_PENALTY', prop: 'repPenalty', flag: '--rep-penalty', defaultValue: 1.3 },
+  { configKey: 'CHATTERBOX_TARGET_SR', prop: 'targetSampleRate', flag: '--target-sr', defaultValue: 24000 },
+  { configKey: 'CHATTERBOX_TARGET_LUFS', prop: 'targetLufs', flag: '--target-lufs', defaultValue: -19.0 },
+]);
+
 const providerError = (message, statusCode = 502, code = 'CHATTERBOX_ERROR') => {
   const error = new Error(message);
   error.statusCode = statusCode;
@@ -13,6 +30,29 @@ const providerError = (message, statusCode = 502, code = 'CHATTERBOX_ERROR') => 
 };
 
 export class ChatterboxProvider {
+  static cacheKey(options = {}) {
+    return JSON.stringify([
+      options.CHATTERBOX_PYTHON,
+      options.CHATTERBOX_WORKER,
+      ...CHATTERBOX_OPTION_SPEC.map((entry) => options[entry.configKey] ?? entry.defaultValue),
+    ]);
+  }
+
+  static fromConfig(options = {}) {
+    const mapped = {};
+    for (const entry of CHATTERBOX_OPTION_SPEC) {
+      mapped[entry.prop] = options[entry.configKey] ?? entry.defaultValue;
+    }
+    return new ChatterboxProvider({
+      pythonPath: options.CHATTERBOX_PYTHON,
+      workerPath: options.CHATTERBOX_WORKER,
+      ...mapped,
+      startupTimeoutMs: options.CHATTERBOX_STARTUP_TIMEOUT_MS,
+      requestTimeoutMs: options.CHATTERBOX_REQUEST_TIMEOUT_MS,
+      maxQueue: options.CHATTERBOX_MAX_QUEUE,
+    });
+  }
+
   constructor({
     pythonPath,
     workerPath,
@@ -20,10 +60,19 @@ export class ChatterboxProvider {
     device = 'auto',
     tempDir,
     voicePrompt = '',
+    cfmSteps = 8,
+    temperature = 0.65,
+    topK = 500,
+    topP = 0.90,
+    repPenalty = 1.3,
+    targetSampleRate = 24000,
+    targetLufs = -19.0,
     startupTimeoutMs = 120000,
     requestTimeoutMs = 120000,
     maxQueue = 30,
+    startupRetryCooldownMs = 300000,
     spawnFn = spawn,
+    now = Date.now,
   }) {
     if (!pythonPath || !workerPath || !model || !tempDir) {
       throw providerError('Chatterbox requires explicit Python, worker, model, and temp directory configuration.', 500, 'CHATTERBOX_CONFIG');
@@ -38,10 +87,21 @@ export class ChatterboxProvider {
     this.device = device;
     this.tempDir = path.resolve(tempDir);
     this.voicePrompt = voicePrompt ? path.resolve(voicePrompt) : '';
+    this.cfmSteps = cfmSteps;
+    this.temperature = temperature;
+    this.topK = topK;
+    this.topP = topP;
+    this.repPenalty = repPenalty;
+    this.targetSampleRate = targetSampleRate;
+    this.targetLufs = targetLufs;
     this.startupTimeoutMs = startupTimeoutMs;
     this.requestTimeoutMs = requestTimeoutMs;
     this.maxQueue = maxQueue;
+    this.startupRetryCooldownMs = startupRetryCooldownMs;
     this.spawnFn = spawnFn;
+    this.now = now;
+    this.stderrTail = [];
+    this.startupFailure = null;
     this.child = null;
     this.readyPromise = null;
     this.inputClosed = false;
@@ -49,59 +109,81 @@ export class ChatterboxProvider {
     this.jobs = [];
     this.activeJob = null;
     this.jobsById = new Map();
+    this.ready = false;
+  }
+
+  /** Startup error that carries the worker's last stderr lines, so failures are diagnosable. */
+  startupError(message, statusCode, code) {
+    const tail = this.stderrTail.length ? `\nLast worker output:\n${this.stderrTail.join('\n')}` : '';
+    return providerError(`${message}${tail}`, statusCode, code);
+  }
+
+  buildWorkerArgs() {
+    const args = [this.workerPath];
+    for (const entry of CHATTERBOX_OPTION_SPEC) {
+      const value = this[entry.prop];
+      if (entry.optional && (value === '' || value === null || value === undefined)) continue;
+      args.push(entry.flag, String(value));
+    }
+    return args;
   }
 
   async start() {
     if (this.readyPromise) return this.readyPromise;
 
+    // After a failed start, fail fast for a while instead of spawning a new worker for every sentence.
+    if (this.startupFailure && this.now() - this.startupFailure.at < this.startupRetryCooldownMs) {
+      throw this.startupFailure.error;
+    }
+
     this.inputClosed = false;
+    this.stderrTail = [];
     this.readyPromise = new Promise((resolve, reject) => {
-      const args = [
-        this.workerPath,
-        '--model',
-        this.model,
-        '--device',
-        this.device,
-        '--temp-dir',
-        this.tempDir,
-      ];
-      if (this.voicePrompt) {
-        args.push('--voice-prompt', this.voicePrompt);
-      }
+      const args = this.buildWorkerArgs();
       const child = this.spawnFn(this.pythonPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
       this.child = child;
 
       let settled = false;
+      const failStartup = (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(startupTimer);
+        this.startupFailure = { error, at: this.now() };
+        this.failAll(error);
+        reject(error);
+        this.stop();
+      };
       const startupTimer = setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          this.failAll(providerError('Chatterbox worker readiness timed out.', 504, 'CHATTERBOX_STARTUP_TIMEOUT'));
-          reject(providerError('Chatterbox worker readiness timed out.', 504, 'CHATTERBOX_STARTUP_TIMEOUT'));
-          this.stop();
-        }
+        failStartup(this.startupError(
+          `Chatterbox worker readiness timed out after ${Math.round(this.startupTimeoutMs / 1000)}s. `
+            + 'If its Python environment is in a cloud-synced folder (e.g. iCloud Desktop), offloaded files make startup very slow.',
+          504,
+          'CHATTERBOX_STARTUP_TIMEOUT',
+        ));
       }, this.startupTimeoutMs);
+      this.onStartupError = failStartup;
 
       child.stdout.setEncoding('utf8');
       child.stdout.on('data', (chunk) => this.handleStdout(chunk));
       child.stderr.setEncoding('utf8');
-      child.stderr.on('data', () => {});
+      child.stderr.on('data', (chunk) => {
+        if (this.child !== child) return;
+        const lines = chunk.split('\n').map((line) => line.trimEnd()).filter(Boolean);
+        this.stderrTail = [...this.stderrTail, ...lines].slice(-STDERR_TAIL_LINES);
+      });
       child.once('error', (error) => {
-        const workerError = providerError(`Chatterbox worker failed to start: ${error.message}`, 503, 'CHATTERBOX_START_FAILED');
-        this.failAll(workerError);
-        if (!settled) {
-          settled = true;
-          clearTimeout(startupTimer);
-          reject(workerError);
-        }
+        failStartup(this.startupError(`Chatterbox worker failed to start: ${error.message}`, 503, 'CHATTERBOX_START_FAILED'));
       });
       child.once('exit', (code, signal) => {
-        if (!settled) {
-          const workerError = providerError(`Chatterbox worker exited before readiness (code=${code}, signal=${signal || 'none'}).`, 503, 'CHATTERBOX_EXITED');
-          settled = true;
-          clearTimeout(startupTimer);
-          reject(workerError);
-        }
+        failStartup(this.startupError(
+          `Chatterbox worker exited before readiness (code=${code}, signal=${signal || 'none'}).`,
+          503,
+          'CHATTERBOX_EXITED',
+        ));
+        // A worker replaced after a failed start must not tear down its successor.
+        if (this.child !== child) return;
         this.failAll(providerError('Chatterbox worker exited.', 503, 'CHATTERBOX_EXITED'));
+        this.ready = false;
         this.child = null;
         this.readyPromise = null;
       });
@@ -109,6 +191,8 @@ export class ChatterboxProvider {
       this.onReady = (message) => {
         if (settled) return;
         settled = true;
+        this.ready = true;
+        this.startupFailure = null;
         clearTimeout(startupTimer);
         resolve(message);
         this.pump();
@@ -140,8 +224,18 @@ export class ChatterboxProvider {
       this.onReady?.(message);
       return;
     }
+    if (message.type === 'error' && message.id === 'startup') {
+      this.onStartupError?.(this.startupError(
+        `Chatterbox model failed to load: ${message.error || 'unknown error'}`,
+        503,
+        message.code || 'LOAD_FAILED',
+      ));
+      return;
+    }
     const job = this.jobsById.get(message.id);
     if (!job) return;
+    // Every terminal message ends the job: release its request timer instead of leaving it to fire later.
+    if (job.timer) clearTimeout(job.timer);
 
     if (message.type === 'audio') {
       this.jobsById.delete(message.id);
@@ -279,6 +373,7 @@ export class ChatterboxProvider {
   }
 
   stop() {
+    this.ready = false;
     this.inputClosed = true;
     this.failAll(providerError('Chatterbox worker stopped.', 503, 'CHATTERBOX_STOPPED'));
     if (this.child && !this.child.killed) {
@@ -296,5 +391,9 @@ export class ChatterboxProvider {
     }
     this.child = null;
     this.readyPromise = null;
+  }
+
+  isReady() {
+    return Boolean(this.ready && !this.inputClosed && this.child && !this.child.killed);
   }
 }

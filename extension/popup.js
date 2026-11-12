@@ -1,6 +1,6 @@
 /**
  * DocVex — Popup Controller
- * Manages provider selection, connection health, and shortcut hints
+ * Manages provider selection, backend port, Docy mic status, debug toggle, and connection health
  */
 
 const HINTS = {
@@ -8,6 +8,8 @@ const HINTS = {
   groq: '⚡ First sentence spoken in ~595ms with Groq streaming cloud.',
   ollama: '🔒 100% offline & private with Ollama (takes ~30s on CPU due to reasoning tokens).',
 };
+
+let backendPort = 3000;
 
 async function checkStatus() {
   const backendEl = document.getElementById('backend-status');
@@ -18,7 +20,7 @@ async function checkStatus() {
   backendEl.textContent = 'Checking...';
   backendEl.className = 'status-val';
 
-  chrome.runtime.sendMessage({ action: 'CHECK_HEALTH' }, (response) => {
+  chrome.runtime.sendMessage({ action: 'CHECK_HEALTH', port: backendPort }, (response) => {
     if (!response || !response.success) {
       backendEl.textContent = 'Offline';
       backendEl.className = 'status-val indicator-offline';
@@ -80,17 +82,125 @@ function initProviderSelect() {
   });
 }
 
+function initPortInput() {
+  const portInput = document.getElementById('port-input');
+  const portSaveBtn = document.getElementById('port-save-btn');
+  const backendPortLabel = document.getElementById('backend-port-label');
+  if (!portInput || !portSaveBtn) return;
+
+  // Load saved port
+  chrome.storage.local.get(['docvexBackendPort'], (result) => {
+    backendPort = result?.docvexBackendPort || 3000;
+    portInput.value = backendPort;
+    if (backendPortLabel) backendPortLabel.textContent = `Backend (Port ${backendPort}):`;
+  });
+
+  portSaveBtn.addEventListener('click', () => {
+    const parsed = parseInt(portInput.value, 10);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+      portInput.style.borderColor = '#f87171';
+      setTimeout(() => { portInput.style.borderColor = ''; }, 1500);
+      return;
+    }
+    backendPort = parsed;
+    chrome.storage.local.set({ docvexBackendPort: parsed });
+    if (backendPortLabel) backendPortLabel.textContent = `Backend (Port ${parsed}):`;
+
+    portSaveBtn.textContent = '✓ Saved';
+    portSaveBtn.classList.add('saved');
+    setTimeout(() => {
+      portSaveBtn.textContent = 'Save';
+      portSaveBtn.classList.remove('saved');
+    }, 1800);
+
+    // Re-check health with the new port
+    checkStatus();
+  });
+}
+
+function initDocyMicStatus() {
+  const docyMicEl = document.getElementById('docy-mic-status');
+  const enableMicBtn = document.getElementById('enable-mic-btn');
+  if (!docyMicEl) return;
+
+  chrome.storage.local.get(['docvexMicEnabled'], (result) => {
+    if (result?.docvexMicEnabled) {
+      docyMicEl.textContent = '🎙️ Active';
+      docyMicEl.className = 'status-val indicator-mic';
+      if (enableMicBtn) {
+        enableMicBtn.textContent = '✓ Microphone Allowed';
+        enableMicBtn.classList.add('saved');
+      }
+    } else {
+      docyMicEl.textContent = 'Not enabled';
+      docyMicEl.className = 'status-val indicator-mic-off';
+      if (enableMicBtn) {
+        enableMicBtn.textContent = '🎙️ Enable / Test Microphone';
+        enableMicBtn.classList.remove('saved');
+      }
+    }
+  });
+
+  if (enableMicBtn && !enableMicBtn.dataset.bound) {
+    enableMicBtn.dataset.bound = 'true';
+    enableMicBtn.addEventListener('click', async () => {
+      enableMicBtn.textContent = 'Requesting access…';
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop());
+        chrome.storage.local.set({ docvexMicEnabled: true });
+        initDocyMicStatus();
+      } catch (err) {
+        console.warn('Microphone permission error:', err);
+        chrome.storage.local.set({ docvexMicEnabled: false });
+        docyMicEl.textContent = 'Blocked / Denied';
+        docyMicEl.className = 'status-val indicator-offline';
+        enableMicBtn.textContent = '✕ Mic Blocked in Browser Settings';
+        enableMicBtn.style.borderColor = '#f87171';
+      }
+    });
+  }
+}
+
+function initDebugToggle() {
+  const toggle = document.getElementById('debug-toggle');
+  if (!toggle) return;
+
+  chrome.storage.local.get(['docvexDebug'], (result) => {
+    toggle.checked = Boolean(result?.docvexDebug);
+  });
+
+  toggle.addEventListener('change', () => {
+    chrome.storage.local.set({ docvexDebug: toggle.checked });
+  });
+}
+
 function initShortcutLabel() {
   const shortcutDisplay = document.getElementById('shortcut-display');
   if (!shortcutDisplay) return;
-  shortcutDisplay.textContent = 'Control + Shift + S';
+  // Read the actual bound shortcut from Chrome instead of hardcoding it
+  if (chrome.commands && chrome.commands.getAll) {
+    chrome.commands.getAll((commands) => {
+      const cmd = commands.find((c) => c.name === 'teach-selection');
+      if (cmd && cmd.shortcut) {
+        // Format: "Ctrl+Shift+S" → "Ctrl + Shift + S" for readability
+        shortcutDisplay.textContent = cmd.shortcut.replace(/\+/g, ' + ');
+      } else {
+        shortcutDisplay.textContent = 'Control + Shift + S';
+      }
+    });
+  } else {
+    shortcutDisplay.textContent = 'Control + Shift + S';
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   initProviderSelect();
+  initPortInput();
+  initDocyMicStatus();
+  initDebugToggle();
   initShortcutLabel();
   checkStatus();
   const refreshBtn = document.getElementById('refresh-btn');
   if (refreshBtn) refreshBtn.addEventListener('click', checkStatus);
 });
-

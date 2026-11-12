@@ -1,3 +1,8 @@
+import { shapeSpeechText } from '../../extension/speechCore.js';
+
+export const LEGAL_EVIDENCE_KINDS = Object.freeze(['statute', 'statute-absence', 'correspondence']);
+export { shapeSpeechText };
+
 /**
  * Teaching System Prompt, prompt builder with grounding truthfulness,
  * and speech-optimization transformations for DocVex.
@@ -65,7 +70,7 @@ export const DOCY_FOLLOWUP_SYSTEM_PROMPT = `You are Docy, the DocVex voice assis
 Your job right now:
 - Follow their instruction or answer their specific question directly with concrete facts and actual outputs (do NOT dodge or re-lecture the whole page).
 - If they ask to trace, compute, show an example, check behavior, or tell the actual output inspired by the highlighted text/code or previous context, walk directly to the exact output or concrete result clearly and accurately.
-- Sound warm, natural, crisp, and direct — start answering immediately.
+- Sound warm, natural, and crisp — like a knowledgeable friend who welcomes curious questions and starts answering immediately.
 - Weave in the provided "Highlighted context" and "Previous explanation context" when relevant, without repeating what you already said.
 - Keep it tight: 2 to 5 spoken sentences unless they explicitly asked for deeper detail.
 
@@ -84,17 +89,28 @@ Delivery rules:
  * @param {string} [params.pageTitle]
  * @param {Array<{domain: string, content: string}>} [params.evidence] - must
  *   already be REAL fetched/sanitized text, never placeholder strings.
+ * @param {'general'|'law'} [params.mode] - 'law' (the /lawbuddy route) never
+ *   falls back to general knowledge.
+ * @param {{ direction?: string|null }} [params.analysis] - LawBuddy's question analysis: when it gives an
+ *   answer format (a "can I…" question is answered as allows / forbids / where the line is), that format
+ *   replaces the default tutor direction.
  * @returns {{ userPrompt: string, groundingStatus: 'grounded'|'ungrounded', sourceDomains: string[] }}
  */
-export function buildTeachingPrompt({ selectedText, pageUrl, pageTitle, evidence = [] }) {
+const LEGAL_CAUTIONS = 'If the evidence carries a CAUTION that a court invalidated part of the printed text, say clearly that it is not good law as printed. If it marks an amendment as PENDING or a provision as NOT IN FORCE, say so and do not present it as law in force. If a provision was not found, say it could not be verified and do not guess its contents. Do not cite any case, judgment, or section that is not in the evidence.';
+
+export function buildTeachingPrompt({ selectedText, pageUrl, pageTitle, evidence = [], mode = 'general', analysis = null }) {
   const trusted = evidence.filter((e) => e && e.domain && e.content && e.content.trim().length > 0);
   const groundingStatus = trusted.length > 0 ? 'grounded' : 'ungrounded';
+  const isLegal = mode === 'law' || trusted.some((e) => LEGAL_EVIDENCE_KINDS.includes(e.kind));
 
+  const noEvidence = isLegal
+    ? '(LawBuddy found nothing for this request in its verified library of official legal texts)'
+    : '(no verified evidence retrieved for this request — explain from general knowledge only)';
   const evidenceBlock = trusted.length
     ? trusted
         .map((e, i) => `[${i + 1}] source: ${e.domain}\n<evidence>\n${e.content}\n</evidence>`)
         .join('\n\n')
-    : '(no verified evidence retrieved for this request — explain from general knowledge only)';
+    : noEvidence;
 
   // Cap input at 4000 chars to keep Groq first-token latency under 600ms for any selection size
   const MAX_TEACH_CHARS = 4000;
@@ -107,7 +123,13 @@ export function buildTeachingPrompt({ selectedText, pageUrl, pageTitle, evidence
   const isCodeOrDsa = /\b(class|public|private|static|void|int|function|def|return|for|while|if|else|vector|TreeNode|ListNode|dp|arr|nums)\b|[{}\[\];]|->|=>/.test(rawText) || /algorithm|complexity|sorted|binary search|pointer|tree|graph|hash/i.test(rawText);
 
   let direction = 'Explain the selected text to the student now.';
-  if (isGreeting) {
+  if (isLegal && !trusted.length) {
+    direction = 'LawBuddy has no official text for this request. Say so plainly in one or two sentences, suggest asking about a specific Article, Schedule or section, and do not answer the legal question from memory.';
+  } else if (isLegal && analysis?.direction) {
+    direction = `${analysis.direction}\n${LEGAL_CAUTIONS}`;
+  } else if (isLegal) {
+    direction = `Teach this like an Indian law tutor, grounded only in the official text inside the evidence blocks. Name the provision the way a lawyer cites it (for example, Article 21 of the Constitution of India), explain what it means in plain words, give one short realistic example, and say when its current text took effect if the evidence states it. ${LEGAL_CAUTIONS}`;
+  } else if (isGreeting) {
     direction = 'The student just greeted you. Respond with a warm, natural, spontaneous spoken greeting in 1 to 2 short sentences, inviting them to highlight any tricky code, algorithm, or technical concept.';
   } else if (isCodeOrDsa) {
     direction = 'Explain this code / DSA problem for a student listening with eyes closed: create an intuitive spatial picture of the data structures, walk through a tiny step-by-step dry run (3 to 4 elements), and explain why the logic works without dictating raw code syntax.';
@@ -144,51 +166,14 @@ export function buildTeachingUserPrompt({ text, title = '', url = '', references
 }
 
 /**
- * Optimizes text for speech synthesis:
- * - Strips raw URLs and markdown formatting symbols (*, _, #, `, [ ]).
- * - Converts bullet points and numbered lists to fluid spoken transitions.
- * - Expands common programming operators into words where helpful.
- */
-export const shapeSpeechText = (text) => {
-  if (!text || typeof text !== 'string') return '';
-
-  let spoken = text;
-
-  // Remove URLs so they aren't read character-by-character
-  spoken = spoken.replace(/https?:\/\/\S+/gi, '');
-
-  // Remove markdown headers
-  spoken = spoken.replace(/^#{1,6}\s+/gm, '');
-
-  // Remove code block markers and inline backticks
-  spoken = spoken.replace(/```[a-zA-Z]*\n?/g, '');
-  spoken = spoken.replace(/`/g, '');
-
-  // Remove bold / italics asterisks and underscores
-  spoken = spoken.replace(/\*\*([^*]+)\*\*/g, '$1');
-  spoken = spoken.replace(/\*([^*]+)\*/g, '$1');
-  spoken = spoken.replace(/__([^_]+)__/g, '$1');
-  spoken = spoken.replace(/_([^_]+)_/g, '$1');
-
-  // Remove markdown link syntax [text](url) -> text
-  spoken = spoken.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-
-  // Remove citation brackets like [1], [Source 1]
-  spoken = spoken.replace(/\[(?:Source\s*)?\d+[^\]]*\]/gi, '');
-
-  // Strip list bullets (- or *) cleanly so the narrator speaks natural prose
-  spoken = spoken.replace(/^[\*\-]\s+/gm, '');
-
-  // Collapse multiple whitespaces and excessive newlines into clean sentence spacing
-  spoken = spoken.replace(/[ \t]+/g, ' ');
-  spoken = spoken.replace(/\n\s*\n+/g, ' ');
-
-  return spoken.trim();
-};
-
-/**
  * Builds the focused prompt for interactive voice instructions and follow-up questions.
  * Anchors the response on both the highlighted passage and the previous explanation context.
+ *
+ * @param {Object} params
+ * @param {string} params.followUpQuestion  — the user's spoken instruction or question
+ * @param {string} [params.previousContext] — the explanation context Docy was giving
+ * @param {string} [params.selectedText]    — the highlighted snippet anchoring the session
+ * @returns {string} userPrompt
  */
 export function buildFollowUpPrompt({ followUpQuestion, previousContext = '', selectedText = '' }) {
   const question = (followUpQuestion || '').trim();
