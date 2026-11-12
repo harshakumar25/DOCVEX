@@ -1,4 +1,5 @@
 
+
 import { buildReasoningPrompt, OLLAMA_REASONING_SYSTEM_PROMPT } from './prompt/reasoningPrompt.js';
 import { generateExplanation, streamExplanation } from './providers/providerFactory.js';
 import { ChatterboxProvider } from './providers/chatterboxProvider.js';
@@ -254,33 +255,57 @@ export const teachPipeline = async (
  * 3. Emits onSpeechReady when Groq finishes, onInsights when Ollama finishes.
  */
 export const streamTeachPipeline = async (
-  { text, title = '', url = '', pageContext = '', provider, requestId },
+  {
+    text = '',
+    title = '',
+    url = '',
+    pageContext = '',
+    provider,
+    requestId,
+    isFollowUp = false,
+    followUpContext = '',
+    followUpSelectedText = '',
+    continueSentences = [],
+  },
   { onMetadata, onToken, onSpeechReady, onAudioReady, onAudioError, onInsights, onDone, onError, signal, options = {} } = {}
 ) => {
+  const resumedSentences = Array.isArray(continueSentences)
+    ? continueSentences.map((s) => String(s || '').trim()).filter(Boolean)
+    : [];
+  const isContinueResume = resumedSentences.length > 0;
+  // LawBuddy (mode 'law') grounds follow-ups like fresh questions instead of answering from context.
+  const effectiveIsFollowUp = Boolean(isFollowUp || options.isFollowUp || false) && options.mode !== 'law';
+  const effectiveFollowUpContext = followUpContext || options.followUpContext || '';
+
   let references = [];
-  try {
-    const retrieveFn = options.retrieveVerifiedReferences || retrieveVerifiedReferences;
-    references = await retrieveFn({
-      text,
-      title,
-      url,
-      pageContext,
-      maxSources: 3,
-      timeoutMs: options.RETRIEVAL_TIMEOUT_MS || 2500,
-    });
-  } catch {
-    references = [];
+  if (!effectiveIsFollowUp && !isContinueResume) {
+    try {
+      const retrieveFn = options.retrieveVerifiedReferences || retrieveVerifiedReferences;
+      references = await retrieveFn({
+        text,
+        title,
+        url,
+        pageContext,
+        maxSources: 3,
+        timeoutMs: options.RETRIEVAL_TIMEOUT_MS || 2500,
+      });
+    } catch {
+      references = [];
+    }
   }
 
-  // LawBuddy (mode 'law') grounds follow-ups like fresh questions instead of answering from context.
-  const isFollowUp = Boolean(options.isFollowUp || false) && options.mode !== 'law';
-
   let userPrompt, groundingStatus, sourceDomains, sources;
-  if (isFollowUp) {
-    // Skip retrieval for follow-ups — the context is already in previousContext
+  if (isContinueResume) {
+    userPrompt = '';
+    groundingStatus = 'resumed';
+    sourceDomains = [];
+    sources = [];
+  } else if (effectiveIsFollowUp) {
+    // Skip retrieval for follow-ups — the context is already in previousContext / selectedText
     userPrompt = buildFollowUpPrompt({
       followUpQuestion: text,
-      previousContext: options.followUpContext || '',
+      previousContext: effectiveFollowUpContext,
+      selectedText: followUpSelectedText,
     });
     groundingStatus = 'ungrounded';
     sourceDomains = [];
@@ -301,7 +326,9 @@ export const streamTeachPipeline = async (
   }
 
   // A route may bring its own system prompt (LawBuddy's law tutor); DocVex's narrator is the default.
-  const activeSystemPrompt = isFollowUp ? DOCY_FOLLOWUP_SYSTEM_PROMPT : (options.systemPrompt || TEACHER_SYSTEM_PROMPT);
+  const activeSystemPrompt = effectiveIsFollowUp
+    ? DOCY_FOLLOWUP_SYSTEM_PROMPT
+    : (options.systemPrompt || TEACHER_SYSTEM_PROMPT);
   const declineWithoutText = declinesWithoutText(options, groundingStatus);
 
   const chosenProvider = provider || options.DEFAULT_PROVIDER || 'ollama';
@@ -338,63 +365,69 @@ export const streamTeachPipeline = async (
     });
   }
 
+  const queueChatterboxSentence = (sentence, sentenceIndex, pauseAfterMs = 0) => {
+    if (!chatterbox || !isMeaningfulTeachingSentence(sentence)) return;
+    const speechText = normalizeSpeechText(sentence);
+    const audioPromise = chatterbox
+      .synthesize(speechText, { requestId: `${requestId}-sentence-${sentenceIndex}`, signal })
+      .then((audio) => {
+        if (typeof onAudioReady === 'function') {
+          onAudioReady({
+            requestId,
+            sentence,
+            sentenceIndex,
+            speechText,
+            pauseAfterMs,
+            fileName: audio.fileName,
+            sampleRate: audio.sampleRate,
+            durationSeconds: audio.durationSeconds,
+            generatedAudioAvailableSeconds: audio.generatedAudioAvailableSeconds,
+            model: audio.model,
+          });
+        }
+        return audio;
+      })
+      .catch((error) => {
+        if (signal?.aborted || error.code === 'CHATTERBOX_CANCELLED' || error.name === 'AbortError') {
+          return null;
+        }
+        // One log line per error kind per request, not one stack trace per sentence.
+        if (!loggedAudioErrorCodes.has(error.code)) {
+          loggedAudioErrorCodes.add(error.code);
+          console.error(`[DocVex Pipeline Audio Error] ${error.code || 'AUDIO_ERROR'}: ${error.message}`);
+        }
+        if (typeof onAudioError === 'function') {
+          onAudioError({
+            requestId,
+            sentence,
+            sentenceIndex,
+            error: error.message,
+            statusCode: error.statusCode || 502,
+          });
+        }
+        return null;
+      });
+    audioPromises.push(audioPromise);
+  };
+
   const sentenceBuffer = chatterbox
     ? new SentenceBuffer({
         minSentenceLength: 4,
         onSentence: (sentence, sentenceIndex, pauseAfterMs = 0) => {
-          if (!isMeaningfulTeachingSentence(sentence)) return;
-          const speechText = normalizeSpeechText(sentence);
-          const audioPromise = chatterbox
-            .synthesize(speechText, { requestId: `${requestId}-sentence-${sentenceIndex}`, signal })
-            .then((audio) => {
-              if (typeof onAudioReady === 'function') {
-                onAudioReady({
-                  requestId,
-                  sentence,
-                  sentenceIndex,
-                  speechText,
-                  pauseAfterMs,
-                  fileName: audio.fileName,
-                  sampleRate: audio.sampleRate,
-                  durationSeconds: audio.durationSeconds,
-                  generatedAudioAvailableSeconds: audio.generatedAudioAvailableSeconds,
-                  model: audio.model,
-                });
-              }
-              return audio;
-            })
-            .catch((error) => {
-              if (signal?.aborted || error.code === 'CHATTERBOX_CANCELLED' || error.name === 'AbortError') {
-                return null;
-              }
-              // One log line per error kind per request, not one stack trace per sentence.
-              if (!loggedAudioErrorCodes.has(error.code)) {
-                loggedAudioErrorCodes.add(error.code);
-                console.error(`[DocVex Pipeline Audio Error] ${error.code || 'AUDIO_ERROR'}: ${error.message}`);
-              }
-              if (typeof onAudioError === 'function') {
-                onAudioError({
-                  requestId,
-                  sentence,
-                  sentenceIndex,
-                  error: error.message,
-                  statusCode: error.statusCode || 502,
-                });
-              }
-              return null;
-            });
-          audioPromises.push(audioPromise);
+          queueChatterboxSentence(sentence, sentenceIndex, pauseAfterMs);
         },
       })
     : null;
 
-  // In hybrid mode, dispatch background deep-dive reasoning with Ollama concurrently (skip for trivial greetings and follow-ups).
+  // In hybrid mode, dispatch background deep-dive reasoning with Ollama concurrently (skip for trivial greetings, follow-ups, and resumed playback).
   // Ollama is fire-and-forget — it must NEVER block onDone. Insights arrive later via onInsights.
   let ollamaPromise = null;
   const isSubstantialTechnicalText =
+    !effectiveIsFollowUp &&
+    !isContinueResume &&
     (text || '').trim().length >= 25 &&
     !/^(hi+|hello+|hey+|yo+|what'?s\s*up|greetings|hola)\b/i.test((text || '').trim());
-  if (isHybrid && isSubstantialTechnicalText && !isFollowUp && !declineWithoutText) {
+  if (isHybrid && isSubstantialTechnicalText && !effectiveIsFollowUp && !declineWithoutText) {
 
     const reasoningPrompt = buildReasoningPrompt({
       selectedText: text,
@@ -416,41 +449,55 @@ export const streamTeachPipeline = async (
   }
 
   try {
-    // Stream voice generation tokens from voice provider (Groq in hybrid mode)
     let modelResult;
-    let usedVoiceProvider = voiceProvider;
+    let usedVoiceProvider = isContinueResume ? 'resumed' : voiceProvider;
     const forward = (token) => {
       onToken?.(token);
       sentenceBuffer?.addToken(token);
     };
-    try {
-      modelResult = declineWithoutText
-        ? replyWithoutModel(lawNoTextReply(references), forward)
-        : await streamExplanation({
-          prompt: userPrompt,
-          systemPrompt: activeSystemPrompt,
-          provider: voiceProvider,
-          options,
-          signal,
-          onToken: forward,
-        });
-    } catch (voiceErr) {
-      // Groq is overloaded or unavailable — fall back to Ollama for the voice stream
-      if (isHybrid && (voiceErr.statusCode === 503 || voiceErr.statusCode === 502 || voiceErr.statusCode === 504)) {
-        console.warn('[DocVex Pipeline] Groq voice provider failed, falling back to Ollama for voice stream.');
-        usedVoiceProvider = 'ollama';
-        // Cancel any pending Ollama background insights so we don't run two Ollama calls concurrently
-        ollamaPromise = null;
-        modelResult = await streamExplanation({
-          prompt: userPrompt,
-          systemPrompt: activeSystemPrompt,
-          provider: 'ollama',
-          options,
-          signal,
-          onToken: forward,
-        });
-      } else {
-        throw voiceErr;
+
+    if (isContinueResume) {
+      for (let i = 0; i < resumedSentences.length; i++) {
+        if (signal?.aborted) break;
+        const sentence = resumedSentences[i];
+        onToken?.(i === 0 ? sentence : ` ${sentence}`);
+        queueChatterboxSentence(sentence, i, 180);
+      }
+      modelResult = {
+        explanation: resumedSentences.join(' '),
+        provider: 'resumed',
+        model: 'cached-session',
+      };
+    } else {
+      try {
+        modelResult = declineWithoutText
+          ? replyWithoutModel(lawNoTextReply(references), forward)
+          : await streamExplanation({
+              prompt: userPrompt,
+              systemPrompt: activeSystemPrompt,
+              provider: voiceProvider,
+              options,
+              signal,
+              onToken: forward,
+            });
+      } catch (voiceErr) {
+        // Groq is overloaded or unavailable — fall back to Ollama for the voice stream
+        if (isHybrid && (voiceErr.statusCode === 503 || voiceErr.statusCode === 502 || voiceErr.statusCode === 504)) {
+          console.warn('[DocVex Pipeline] Groq voice provider failed, falling back to Ollama for voice stream.');
+          usedVoiceProvider = 'ollama';
+          // Cancel any pending Ollama background insights so we don't run two Ollama calls concurrently
+          ollamaPromise = null;
+          modelResult = await streamExplanation({
+            prompt: userPrompt,
+            systemPrompt: activeSystemPrompt,
+            provider: 'ollama',
+            options,
+            signal,
+            onToken: forward,
+          });
+        } else {
+          throw voiceErr;
+        }
       }
     }
 
