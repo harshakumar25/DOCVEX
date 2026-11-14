@@ -1,8 +1,10 @@
 
 
+import { buildTeachingPrompt, buildFollowUpPrompt, shapeSpeechText, TEACHER_SYSTEM_PROMPT, DOCY_FOLLOWUP_SYSTEM_PROMPT } from './prompt/teacherPrompt.js';
 import { buildReasoningPrompt, OLLAMA_REASONING_SYSTEM_PROMPT } from './prompt/reasoningPrompt.js';
 import { generateExplanation, streamExplanation } from './providers/providerFactory.js';
 import { ChatterboxProvider } from './providers/chatterboxProvider.js';
+import { GnaniProvider } from './providers/gnaniProvider.js';
 import { retrieveVerifiedReferences } from './retrieval/referenceEngine.js';
 import { SentenceBuffer } from './prompt/sentenceBuffer.js';
 import { normalizeSpeechText } from './prompt/speechNormalization.js';
@@ -11,6 +13,7 @@ import { normalizeSpeechText } from './prompt/speechNormalization.js';
 // object: the server builds a fresh options object per request, and keying on identity spawned a new
 // model-loading worker for every request (and left /health watching a provider that never started).
 const chatterboxProviders = new Map();
+const gnaniProviders = new Map();
 
 export const getChatterboxProvider = (options) => {
   if (options.chatterboxProvider) return options.chatterboxProvider;
@@ -21,6 +24,38 @@ export const getChatterboxProvider = (options) => {
   const provider = ChatterboxProvider.fromConfig(options);
   chatterboxProviders.set(key, provider);
   return provider;
+};
+
+export const getGnaniProvider = (options = {}) => {
+  if (options.gnaniProvider) return options.gnaniProvider;
+  const apiKey = (options.GNANI_API_KEY || '').trim();
+  if (!apiKey) return null;
+  const key = GnaniProvider.cacheKey(options);
+  if (gnaniProviders.has(key)) return gnaniProviders.get(key);
+
+  const provider = GnaniProvider.fromConfig(options);
+  gnaniProviders.set(key, provider);
+  return provider;
+};
+
+export const getAudioProvider = (options = {}) => {
+  if (options.audioProvider) return options.audioProvider;
+  if (options.chatterboxProvider) return options.chatterboxProvider;
+
+  const pref = (options.AUDIO_PROVIDER || 'auto').toLowerCase().trim();
+  if (pref === 'gnani') {
+    return getGnaniProvider(options);
+  }
+  if (pref === 'chatterbox') {
+    return getChatterboxProvider(options);
+  }
+
+  // 'auto': prefer Gnani if API key is configured for sub-second cloud voiceover,
+  // otherwise fallback to local Chatterbox if enabled.
+  const gnani = getGnaniProvider(options);
+  if (gnani) return gnani;
+
+  return getChatterboxProvider(options);
 };
 
 // Sources shown to clients; legal evidence also carries what the LawBuddy page needs to open the cited text.
@@ -334,12 +369,13 @@ export const streamTeachPipeline = async (
   const chosenProvider = provider || options.DEFAULT_PROVIDER || 'ollama';
   const isHybrid = chosenProvider === 'hybrid';
   const voiceProvider = isHybrid ? 'groq' : chosenProvider;
-  const chatterbox = getChatterboxProvider(options);
+  const audioProvider = getAudioProvider(options);
+  const chatterbox = audioProvider;
   const audioPromises = [];
   const loggedAudioErrorCodes = new Set();
 
-  if (chatterbox) {
-    chatterbox.start().catch(() => {});
+  if (audioProvider) {
+    audioProvider.start().catch(() => {});
   }
 
   const reportedProvider = declineWithoutText ? 'lawbuddy' : chosenProvider;
@@ -359,16 +395,21 @@ export const streamTeachPipeline = async (
       provider: reportedProvider,
       model: modelName,
       isHybrid: isHybrid && !declineWithoutText,
-      chatterbox: chatterbox
-        ? { enabled: true, model: options.CHATTERBOX_MODEL, nativeIncrementalGeneration: false }
+      chatterbox: audioProvider
+        ? {
+            enabled: true,
+            provider: audioProvider.providerName || 'neural',
+            model: audioProvider.model || options.CHATTERBOX_MODEL,
+            nativeIncrementalGeneration: false,
+          }
         : { enabled: false },
     });
   }
 
-  const queueChatterboxSentence = (sentence, sentenceIndex, pauseAfterMs = 0) => {
-    if (!chatterbox || !isMeaningfulTeachingSentence(sentence)) return;
+  const queueAudioSentence = (sentence, sentenceIndex, pauseAfterMs = 0) => {
+    if (!audioProvider || !isMeaningfulTeachingSentence(sentence)) return;
     const speechText = normalizeSpeechText(sentence);
-    const audioPromise = chatterbox
+    const audioPromise = audioProvider
       .synthesize(speechText, { requestId: `${requestId}-sentence-${sentenceIndex}`, signal })
       .then((audio) => {
         if (typeof onAudioReady === 'function') {
@@ -383,12 +424,13 @@ export const streamTeachPipeline = async (
             durationSeconds: audio.durationSeconds,
             generatedAudioAvailableSeconds: audio.generatedAudioAvailableSeconds,
             model: audio.model,
+            provider: audio.provider || audioProvider.providerName || 'neural',
           });
         }
         return audio;
       })
       .catch((error) => {
-        if (signal?.aborted || error.code === 'CHATTERBOX_CANCELLED' || error.name === 'AbortError') {
+        if (signal?.aborted || error.code === 'CHATTERBOX_CANCELLED' || error.code === 'GNANI_CANCELLED' || error.name === 'AbortError') {
           return null;
         }
         // One log line per error kind per request, not one stack trace per sentence.
@@ -409,12 +451,13 @@ export const streamTeachPipeline = async (
       });
     audioPromises.push(audioPromise);
   };
+  const queueChatterboxSentence = queueAudioSentence;
 
-  const sentenceBuffer = chatterbox
+  const sentenceBuffer = audioProvider
     ? new SentenceBuffer({
         minSentenceLength: 4,
         onSentence: (sentence, sentenceIndex, pauseAfterMs = 0) => {
-          queueChatterboxSentence(sentence, sentenceIndex, pauseAfterMs);
+          queueAudioSentence(sentence, sentenceIndex, pauseAfterMs);
         },
       })
     : null;

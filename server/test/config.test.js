@@ -14,6 +14,9 @@ test('config has valid default values', () => {
   assert.ok(['ollama', 'groq', 'hybrid'].includes(config.DEFAULT_PROVIDER));
   assert.ok(config.MAX_SELECTION_LENGTH > 0);
   assert.equal(config.CHATTERBOX_MAX_QUEUE, 30);
+  assert.equal(typeof config.GNANI_BASE_URL, 'string');
+  assert.equal(config.GNANI_TARGET_SR, 24000);
+  assert.ok(['gnani', 'chatterbox', 'auto', 'none'].includes(config.AUDIO_PROVIDER));
 });
 
 test('helpers.parsePort handles valid and invalid ports', () => {
@@ -37,6 +40,15 @@ test('helpers.parseProvider validates supported providers', () => {
   assert.equal(helpers.parseProvider('HYBRID'), 'hybrid');
   assert.equal(helpers.parseProvider('ollama'), 'ollama');
   assert.equal(helpers.parseProvider('unknown', 'ollama'), 'ollama');
+});
+
+test('helpers.parseAudioProvider validates audio providers', () => {
+  assert.equal(helpers.parseAudioProvider('gnani'), 'gnani');
+  assert.equal(helpers.parseAudioProvider('GNANI'), 'gnani');
+  assert.equal(helpers.parseAudioProvider('chatterbox'), 'chatterbox');
+  assert.equal(helpers.parseAudioProvider('auto'), 'auto');
+  assert.equal(helpers.parseAudioProvider('none'), 'none');
+  assert.equal(helpers.parseAudioProvider('invalid', 'auto'), 'auto');
 });
 
 test('helpers.parseFiniteFloat preserves zero/negative floats and validates bounds', () => {

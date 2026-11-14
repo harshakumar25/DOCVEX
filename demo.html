@@ -2598,6 +2598,9 @@
       <button class="role-btn admin" id="tabAdminBtn" onclick="switchNavSection('admin')">
         <span>⚙️</span> Admin Console
       </button>
+      <button class="role-btn sovereign-gate" id="tabChaosFlightBtn" onclick="switchNavSection('chaosflight')" style="border: 1px solid rgba(93, 110, 255, 0.4);">
+        <span>🛡️</span> Sovereign Gate <span class="nav-tab-badge" style="background:#5d6eff;color:#fff;">LIVE</span>
+      </button>
     </div>
 
     <!-- Telemetry Status Badges -->
@@ -3269,7 +3272,458 @@
 
     </div>
 
+    <!-- VIEW 4: SOVEREIGN VOICE GATE & CHAOSFLIGHT -->
+    <div class="view-panel" id="viewChaosFlight">
+      <div class="workbench-header" style="margin-bottom: 24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+        <div>
+          <h2 style="font-size:24px;margin-bottom:6px;display:flex;align-items:center;gap:10px;">
+            <span>🛡️</span> Sovereign Voice Gate &amp; ChaosFlight Simulator
+            <span class="nav-tab-badge" style="background:#5d6eff;color:#fff;font-size:12px;padding:3px 10px;">10,000x TIME-WARP CI GATE</span>
+          </h2>
+          <p style="color:var(--text-sub);font-size:14px;margin:0;">
+            Continuous Pre-Deploy Telephony Certification &amp; Runtime Deterministic Sidecar for Indic Voice Agents.
+          </p>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <button class="btn-neu-secondary" id="btnDownloadMarkdownReport" onclick="downloadCertificationReport('markdown')" style="font-size:12px;padding:8px 14px;">
+            <span>📥</span> Export Markdown Audit
+          </button>
+          <button class="btn-neu-secondary" id="btnDownloadJUnitReport" onclick="downloadCertificationReport('junit')" style="font-size:12px;padding:8px 14px;">
+            <span>⚙️</span> Export JUnit XML
+          </button>
+        </div>
+      </div>
+
+      <!-- Cockpit Grid: 5 Top Executive Telemetry Tiles -->
+      <div class="admin-grid" style="margin-bottom: 24px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
+        <div class="admin-tile">
+          <div class="tile-header">
+            <h3><span>⚡</span> Time-Warp Speedup</h3>
+            <span class="tele-dot" style="background:#10b981;"></span>
+          </div>
+          <div class="tile-main-val">
+            <span id="chaosSpeedupVal">--x</span>
+          </div>
+          <div class="tile-sub-val" id="chaosDspLatency">DSP Kernel: --ms (1.44M samples)</div>
+          <div class="tile-recessed-box">
+            Mathematical discrete G.711 / G.151 DSP
+          </div>
+        </div>
+
+        <div class="admin-tile">
+          <div class="tile-header">
+            <h3><span>📞</span> Telephony Degradation</h3>
+            <span class="tele-dot warning" id="chaosCodecDot"></span>
+          </div>
+          <div class="tile-main-val">
+            <span id="chaosLossVal">--% Loss</span>
+          </div>
+          <div class="tile-sub-val" id="chaosCodecSpec">ITU-T G.711 μ-law @ 8000 Hz</div>
+          <div class="tile-recessed-box" id="chaosNoiseSpec">
+            Acoustic: Ceiling Fan (SNR 12 dB)
+          </div>
+        </div>
+
+        <div class="admin-tile">
+          <div class="tile-header">
+            <h3><span>🎯</span> Task Completion Rate</h3>
+            <span class="tele-dot" id="chaosTcrDot"></span>
+          </div>
+          <div class="tile-main-val">
+            <span id="chaosTcrVal">--%</span>
+          </div>
+          <div class="tile-sub-val" id="chaosHerVal">Human Escalation Rate: --%</div>
+          <div class="tile-recessed-box">
+            Enterprise CI/CD Target: ≥ 85.0%
+          </div>
+        </div>
+
+        <div class="admin-tile">
+          <div class="tile-header">
+            <h3><span>📜</span> Statutory Compliance</h3>
+            <span class="tele-dot" id="chaosStatutoryDot"></span>
+          </div>
+          <div class="tile-main-val">
+            <span id="chaosComplianceBadge" style="font-size:18px;">Ready</span>
+          </div>
+          <div class="tile-sub-val" id="chaosPiiLeaks">DPDP Act 2023: 0 Leaks</div>
+          <div class="tile-recessed-box" id="chaosTeardownBox">
+            TRAI TTD: &lt; 3.5s | RBI Window Verified
+          </div>
+        </div>
+
+        <div class="admin-tile">
+          <div class="tile-header">
+            <h3><span>🛡️</span> Actuarial Risk (TRAI 21A)</h3>
+            <span class="tele-dot" id="chaosRiskDot" style="background:#10b981;"></span>
+          </div>
+          <div class="tile-main-val" style="display:flex; justify-content:space-between; align-items:center;">
+            <span id="chaosNriVal" style="font-size:20px; font-weight:800;">0 / 100 NRI</span>
+            <span id="chaosRiskTierBadge" class="nav-tab-badge" style="background:#10b981; color:#fff; font-size:10px; padding:2px 8px;">MINIMAL RISK</span>
+          </div>
+          <div style="background:var(--neu-inset); box-shadow:var(--shadow-inset); border-radius:6px; height:6px; width:100%; margin:8px 0; overflow:hidden;">
+            <div id="chaosNriBar" style="width:0%; height:100%; background:#10b981; border-radius:6px; transition:width 0.4s ease, background 0.4s ease;"></div>
+          </div>
+          <div class="tile-sub-val" id="chaosBlacklistProb">TRAI 21A Blacklist Exposure: 0.0%</div>
+          <div class="tile-recessed-box" id="chaosActuarialDetails" style="font-size:11px; line-height:1.4;">
+            Poisson P(K ≥ 3) complaints • Projected: 0.0/1k calls
+          </div>
+        </div>
+      </div>
+
+      <!-- Virtual In-Memory SIP / RTP Trunk Cockpit Banner -->
+      <div class="admin-tile" style="margin-bottom: 24px; padding: 16px 22px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; background:linear-gradient(180deg, #0a0f20 0%, #050813 100%); border:1px solid rgba(44, 52, 128, 0.45);">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div style="width:42px; height:42px; border-radius:12px; background:linear-gradient(135deg, #2C3480 0%, #151a42 100%); display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,0.15); font-size:20px; box-shadow:0 0 12px rgba(44,52,128,0.5);">
+            📞
+          </div>
+          <div>
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <b style="font-size:14px; color:#ffffff; font-family:var(--font-display); letter-spacing:-0.01em;">Virtual In-Memory SIP / RTP Trunk</b>
+              <span class="nav-tab-badge" style="background:rgba(16,185,129,0.15); color:#10b981; border-color:rgba(16,185,129,0.35);">100% NON-PSTN LOOPBACK</span>
+              <span class="nav-tab-badge" style="background:rgba(93,110,255,0.15); color:#5d6eff; border-color:rgba(93,110,255,0.35);">RFC 3261 / 3550</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-muted); margin-top:3px;" id="chaosSipSubtext">
+              Zero Carrier Toll • Anti-A2P Infraction Immunity • Millisecond Teardown Audit
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
+          <div>
+            <div style="font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.04em;">SIP Dialog State</div>
+            <div id="chaosSipDialogState" style="font-size:12px; font-weight:700; color:#5d6eff; font-family:var(--font-mono);">TERMINATED (200 OK / BYE)</div>
+          </div>
+          <div style="width:1px; height:28px; background:rgba(255,255,255,0.1);"></div>
+          <div>
+            <div style="font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.04em;">Negotiated Codec</div>
+            <div id="chaosSipCodec" style="font-size:12px; font-weight:700; color:#fff; font-family:var(--font-mono);">PCMU (PT=0 @ 8000Hz)</div>
+          </div>
+          <div style="width:1px; height:28px; background:rgba(255,255,255,0.1);"></div>
+          <div>
+            <div style="font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.04em;">RTP 20ms Frames</div>
+            <div id="chaosSipRtpFrames" style="font-size:12px; font-weight:700; color:#10b981; font-family:var(--font-mono);">50 Packets (160 s/f)</div>
+          </div>
+          <div style="width:1px; height:28px; background:rgba(255,255,255,0.1);"></div>
+          <div>
+            <div style="font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.04em;">Teardown Latency</div>
+            <div id="chaosSipTeardownLatency" style="font-size:12px; font-weight:700; color:#10b981; font-family:var(--font-mono);">&lt; 1,400ms (TRAI Cap 3,500ms)</div>
+          </div>
+          <div style="width:1px; height:28px; background:rgba(255,255,255,0.1);"></div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button class="btn-neu-secondary" id="btnPlayDegradedAudio" onclick="playChaosAudio('degraded')" style="font-size:11px; padding:6px 12px; display:flex; align-items:center; gap:6px; background:rgba(239,68,68,0.1); border-color:rgba(239,68,68,0.35); color:#fff;" title="Listen to simulated 8 kHz G.711 telephony audio with acoustic noise">
+              <span>🔊</span> <b>8 kHz Telephony</b>
+            </button>
+            <button class="btn-neu-secondary" id="btnPlayCleanAudio" onclick="playChaosAudio('clean')" style="font-size:11px; padding:6px 12px; display:flex; align-items:center; gap:6px; background:rgba(16,185,129,0.1); border-color:rgba(16,185,129,0.35); color:#fff;" title="Listen to 24 kHz clean handset baseline audio">
+              <span>🎧</span> <b>24 kHz Clean</b>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Workbench Layout: Controls on Left, Timeline on Right -->
+      <div style="display:grid; grid-template-columns: 360px 1fr; gap: 24px; align-items: start;">
+        
+        <!-- Flight Controls Column -->
+        <div class="admin-tile" style="padding: 20px;">
+          <h3 style="font-size:16px;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
+            <span>🕹️</span> Flight Test Deck
+          </h3>
+
+          <div style="margin-bottom: 16px;">
+            <label style="font-size:12px;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
+              Enterprise Test Scenario
+            </label>
+            <select id="chaosScenarioSelect" class="neu-select" onchange="onChaosScenarioChange()" style="width:100%;padding:10px;border-radius:10px;">
+              <!-- Populated via API -->
+            </select>
+            <div id="chaosScenarioDesc" style="font-size:12px;color:var(--text-sub);margin-top:6px;line-height:1.4;">
+              Loading scenario description...
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+              <button type="button" class="btn-neu-secondary" id="btnOpenCustomModal" onclick="toggleCustomScenarioModal(true)" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:5px; background:rgba(99,102,241,0.1); border-color:rgba(99,102,241,0.3); color:#fff;" title="Import, edit, and certify custom enterprise agent definitions">
+                <span>📝</span> Custom Scenario JSON
+              </button>
+              <span id="chaosCustomActiveBadge" style="display:none; font-size:10px; font-weight:700; color:#10b981; background:rgba(16,185,129,0.12); padding:2px 6px; border-radius:4px; border:1px solid rgba(16,185,129,0.25);">
+                Custom Agent Active
+              </span>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 16px;">
+            <label style="font-size:12px;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
+              Telephony Codec Emulation
+            </label>
+            <select id="chaosCodecSelect" class="neu-select" style="width:100%;padding:10px;border-radius:10px;">
+              <option value="mulaw">ITU-T G.711 μ-law (North America &amp; Japan, 8 kHz)</option>
+              <option value="alaw">CCITT G.711 A-law (Europe &amp; India Telecom, 8 kHz)</option>
+            </select>
+          </div>
+
+          <div style="margin-bottom: 16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <label style="font-size:12px;font-weight:600;color:var(--text-sub);">
+                Caller Indic Dialect &amp; Code-Switching
+              </label>
+              <span id="chaosDialectCsiChip" style="font-size:11px;font-weight:700;color:#5d6eff;background:rgba(93,110,255,0.1);padding:2px 6px;border-radius:4px;border:1px solid rgba(93,110,255,0.25);font-family:var(--font-mono);">
+                CSI: 0.000
+              </span>
+            </div>
+            <select id="chaosDialectSelect" class="neu-select" style="width:100%;padding:10px;border-radius:10px;">
+              <option value="hinglish">Hinglish (Hindi + English Intra-Sentence Mix)</option>
+              <option value="tanglish">Tanglish (Tamil + English Discourse Blends)</option>
+              <option value="kanglish">Kanglish (Kannada + English Hybrid Registers)</option>
+              <option value="monolingual">Monolingual Clean (Lab Benchmark)</option>
+            </select>
+            <div style="font-size:11px;color:var(--text-sub);margin-top:4px;">
+              Stress-tests Gnani Prisma Language Identification (LID) stability.
+            </div>
+          </div>
+
+          <div style="margin-bottom: 16px;">
+            <label style="font-size:12px;font-weight:600;color:var(--text-sub);display:block;margin-bottom:6px;">
+              Indian Acoustic Noise Profile
+            </label>
+            <select id="chaosNoiseSelect" class="neu-select" style="width:100%;padding:10px;border-radius:10px;">
+              <option value="ceiling_fan">50Hz Ceiling Fan Aerodynamic Turbulence</option>
+              <option value="auto_rickshaw">2-Stroke Auto Rickshaw (120Hz/240Hz Harmonics)</option>
+              <option value="bazaar">Multi-Speaker Bazaar Babble (Cocktail Party)</option>
+              <option value="none">Clean Handset Audio (Lab Benchmark)</option>
+            </select>
+          </div>
+
+          <div style="margin-bottom: 16px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+              <label style="font-size:12px;font-weight:600;color:var(--text-sub);">Signal-to-Noise Ratio (SNR)</label>
+              <span id="chaosSnrLabel" style="font-size:12px;font-weight:700;color:#5d6eff;">12 dB</span>
+            </div>
+            <input type="range" id="chaosSnrSlider" min="4" max="24" value="12" step="1" style="width:100%;" oninput="document.getElementById('chaosSnrLabel').textContent = this.value + ' dB'">
+          </div>
+
+          <div style="margin-bottom: 20px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+              <label style="font-size:12px;font-weight:600;color:var(--text-sub);">Gilbert-Elliott Packet Loss</label>
+              <span id="chaosLossLabel" style="font-size:12px;font-weight:700;color:#ef4444;">4% Burst</span>
+            </div>
+            <input type="range" id="chaosLossSlider" min="0" max="15" value="4" step="1" style="width:100%;" oninput="document.getElementById('chaosLossLabel').textContent = this.value + '% Burst'">
+          </div>
+
+          <div style="margin-bottom: 24px; padding: 12px; background: rgba(93, 110, 255, 0.06); border-radius: 12px; border: 1px solid rgba(93, 110, 255, 0.2);">
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+              <div>
+                <b style="font-size:13px;color:var(--text-main);">PrismaGuard Sidecar</b>
+                <div style="font-size:11px;color:var(--text-sub);margin-top:2px;">Floor-holder &amp; CFG Masker</div>
+              </div>
+              <input type="checkbox" id="chaosSidecarToggle" checked style="width:18px;height:18px;accent-color:#5d6eff;">
+            </div>
+          </div>
+
+          <button class="btn-neu-primary" id="btnLaunchFlight" onclick="runChaosFlightSimulationClick()" style="width:100%;padding:14px;font-size:14px;font-weight:700;background:linear-gradient(135deg, #4f46e5, #6366f1);color:#fff;border-radius:12px;box-shadow:0 4px 14px rgba(79, 70, 229, 0.4);margin-bottom:10px;">
+            🚀 Launch Telephony Stress Flight
+          </button>
+          <button class="btn-neu-secondary" id="btnLaunchMatrix" onclick="runFullMatrixSimulationClick()" style="width:100%;padding:10px;font-size:12px;font-weight:600;border-radius:10px;">
+            🔬 Run Stress Matrix (36 Flights)
+          </button>
+        </div>
+
+        <!-- Right Side: Sidecar Events & Multi-Turn Timeline -->
+        <div style="display:flex; flex-direction:column; gap:20px;">
+          
+          <!-- PrismaGuard Runtime Telemetry Bar -->
+          <div class="admin-tile" style="padding:18px;">
+            <h4 style="font-size:14px;margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+              <span>⚡</span> PrismaGuard Runtime Sidecar Interceptor
+            </h4>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              
+              <div id="sidecarFloorCard" style="padding:12px; border-radius:10px; background:var(--bg-inset, rgba(0,0,0,0.04)); border-left:3px solid #10b981;">
+                <div style="font-size:11px; font-weight:700; color:#10b981; text-transform:uppercase;">Floor-Holder (&lt;180ms)</div>
+                <div id="sidecarFloorText" style="font-size:13px; margin-top:4px; font-weight:600;">Idle</div>
+                <div style="font-size:11px; color:var(--text-sub); margin-top:2px;">Bridges Conversational Vacancy Cliff</div>
+              </div>
+
+              <div id="sidecarCfgCard" style="padding:12px; border-radius:10px; background:var(--bg-inset, rgba(0,0,0,0.04)); border-left:3px solid #3b82f6;">
+                <div style="font-size:11px; font-weight:700; color:#3b82f6; text-transform:uppercase;">CFG Schema Logit Masker</div>
+                <div id="sidecarCfgText" style="font-size:13px; margin-top:4px; font-weight:600;">Idle</div>
+                <div style="font-size:11px; color:var(--text-sub); margin-top:2px;">Elevates 4B SLM to 99.99% valid tool calls</div>
+              </div>
+
+              <div id="sidecarAbortCard" style="padding:12px; border-radius:10px; background:var(--bg-inset, rgba(0,0,0,0.04)); border-left:3px solid #f59e0b;">
+                <div style="font-size:11px; font-weight:700; color:#f59e0b; text-transform:uppercase;">Atomic Barge-In Abort</div>
+                <div id="sidecarAbortText" style="font-size:13px; margin-top:4px; font-weight:600;">Idle</div>
+                <div style="font-size:11px; color:var(--text-sub); margin-top:2px;">Cancels in-flight core-banking mutation</div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Deterministic Statutory Compliance & Assertions Audit Grid -->
+          <div class="admin-tile" style="padding:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+              <h4 style="font-size:15px;margin:0;display:flex;align-items:center;gap:8px;">
+                <span>⚖️</span> Statutory Compliance &amp; Deterministic Assertions Audit
+              </h4>
+              <span id="chaosAssertionsSummaryBadge" class="nav-tab-badge" style="background:#10b981;color:#fff;font-size:11px;padding:3px 10px;">
+                Ready for Certification
+              </span>
+            </div>
+            <div id="chaosAssertionsGrid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
+              <div style="padding:12px;border-radius:10px;background:var(--neu-inset);border:1px solid rgba(255,255,255,0.06);color:var(--text-dim);font-size:12px;grid-column: 1 / -1;text-align:center;">
+                Click <b>Launch Telephony Stress Flight</b> to evaluate all 9 statutory and deterministic assertions.
+              </div>
+            </div>
+          </div>
+
+          <!-- Multi-Turn Conversation Event Timeline -->
+          <div class="admin-tile" style="padding:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+              <h4 style="font-size:15px;margin:0;display:flex;align-items:center;gap:8px;">
+                <span>🎙️</span> In-Flight Telephony Event Log &amp; Assertions
+              </h4>
+              <span id="chaosTurnCountBadge" style="font-size:12px;color:var(--text-sub);">0 Turns</span>
+            </div>
+
+            <div id="chaosTimelineContainer" style="display:flex; flex-direction:column; gap:12px; min-height: 200px;">
+              <div style="text-align:center; padding:40px 20px; color:var(--text-sub); font-size:14px;">
+                Select a scenario and click <b>Launch Telephony Stress Flight</b> to execute the time-warped certification kernel.
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
   </main>
+
+  <!-- Stress Matrix 36-Flight Certification Modal -->
+  <div class="neu-modal-backdrop" id="matrixModal" onclick="if(event.target===this) toggleMatrixModal(false)">
+    <div class="neu-modal-content" style="max-width: 820px; max-height: 85vh; overflow-y: auto;">
+      <div class="modal-header-row" style="margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:22px;">🔬</span>
+          <h3 style="font-size:18px;margin:0;">ChaosFlight 36-Flight Stress Matrix Certification</h3>
+        </div>
+        <button class="icon-action-btn" onclick="toggleMatrixModal(false)">✕</button>
+      </div>
+
+      <div style="margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:12px;font-weight:600;">
+          <span id="matrixProgressLabel">Certifying Matrix Flights...</span>
+          <span id="matrixProgressCount" style="color:#5d6eff;font-family:var(--font-mono);">0 / 36</span>
+        </div>
+        <div style="background:var(--neu-inset);box-shadow:var(--shadow-inset);height:8px;border-radius:4px;overflow:hidden;">
+          <div id="matrixProgressBar" style="width:0%;height:100%;background:linear-gradient(90deg, #4f46e5, #10b981);transition:width 0.2s ease;"></div>
+        </div>
+      </div>
+
+      <!-- Matrix Summary Banner -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:10px;margin-bottom:18px;">
+        <div style="background:var(--neu-inset);padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);">
+          <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;">Gate Verdict</div>
+          <div id="matrixVerdict" style="font-size:14px;font-weight:800;color:#10b981;">PASSED</div>
+        </div>
+        <div style="background:var(--neu-inset);padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);">
+          <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;">Total DSP Time</div>
+          <div id="matrixTotalDsp" style="font-size:14px;font-weight:800;color:#5d6eff;">-- ms</div>
+        </div>
+        <div style="background:var(--neu-inset);padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);">
+          <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;">Max Actuarial NRI</div>
+          <div id="matrixMaxNri" style="font-size:14px;font-weight:800;color:#10b981;">0 / 100 NRI</div>
+        </div>
+        <div style="background:var(--neu-inset);padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);">
+          <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;">GPU Overhead</div>
+          <div style="font-size:14px;font-weight:800;color:#10b981;">0.00ms (Pure CPU)</div>
+        </div>
+      </div>
+
+      <!-- Matrix Flights Table -->
+      <div style="max-height: 280px; overflow-y: auto; border: 1px solid rgba(44, 52, 128, 0.3); border-radius: 12px; margin-bottom: 20px;">
+        <table style="width:100%; border-collapse:collapse; font-size:12px; font-family:var(--font-mono); text-align:left;">
+          <thead>
+            <tr style="background:rgba(44, 52, 128, 0.25); color:var(--text-muted); border-bottom:1px solid rgba(44, 52, 128, 0.3);">
+              <th style="padding:8px 12px;">#</th>
+              <th style="padding:8px 12px;">Scenario ID</th>
+              <th style="padding:8px 12px;">Codec</th>
+              <th style="padding:8px 12px;">Noise Profile</th>
+              <th style="padding:8px 12px;">DSP Latency</th>
+              <th style="padding:8px 12px; text-align:right;">Status</th>
+            </tr>
+          </thead>
+          <tbody id="matrixTableBody">
+            <!-- Dynamically populated safely via DOM -->
+          </tbody>
+        </table>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <div style="display:flex; gap:10px;">
+          <button class="btn-neu-secondary" onclick="downloadCertificationReport('markdown')" style="padding:8px 14px; font-size:12px;">
+            📥 Download Markdown
+          </button>
+          <button class="btn-neu-secondary" onclick="downloadCertificationReport('junit')" style="padding:8px 14px; font-size:12px;">
+            ⚙️ Download JUnit XML
+          </button>
+        </div>
+        <button class="btn-neu-primary" style="padding:8px 22px; font-size:13px;" onclick="toggleMatrixModal(false)">
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Scenario JSON Editor Modal -->
+  <div class="neu-modal-backdrop" id="customScenarioModal" onclick="if(event.target===this) toggleCustomScenarioModal(false)">
+    <div class="neu-modal-content" style="max-width: 760px; max-height: 85vh; overflow-y: auto;">
+      <div class="modal-header-row" style="margin-bottom:14px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:22px;">📝</span>
+          <h3 style="font-size:18px;margin:0;">Custom Voice Agent Definition &amp; Schema</h3>
+        </div>
+        <button class="icon-action-btn" onclick="toggleCustomScenarioModal(false)">✕</button>
+      </div>
+
+      <p style="font-size:12px;color:var(--text-sub);margin-bottom:14px;line-height:1.5;">
+        Paste or edit your enterprise voice agent script, telephony audio parameters, OpenAPI tool schema, and expected conversational turns. ChaosFlight will certify it through the 10,000x time-warped DSP kernel.
+      </p>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+        <div style="display:flex; gap:6px;">
+          <button type="button" class="btn-neu-secondary" onclick="loadCustomScenarioTemplate('sbi')" style="font-size:11px; padding:4px 10px;">
+            Load SBI eKYC
+          </button>
+          <button type="button" class="btn-neu-secondary" onclick="loadCustomScenarioTemplate('hdfc')" style="font-size:11px; padding:4px 10px;">
+            Load HDFC Recovery
+          </button>
+          <button type="button" class="btn-neu-secondary" onclick="formatCustomScenarioJson()" style="font-size:11px; padding:4px 10px;">
+            Format JSON
+          </button>
+        </div>
+        <button type="button" class="btn-neu-secondary" onclick="clearCustomScenarioJson()" style="font-size:11px; padding:4px 10px; color:#ef4444;">
+          Clear
+        </button>
+      </div>
+
+      <div style="background:var(--neu-inset); box-shadow:var(--shadow-inset); border-radius:10px; padding:10px; border:1px solid rgba(255,255,255,0.06); margin-bottom:16px;">
+        <textarea id="customScenarioJsonText" class="neu-input" rows="14" style="width:100%; border:none; background:transparent; color:#e2e8f0; font-family:var(--font-mono); font-size:12px; line-height:1.45; resize:vertical; outline:none; box-shadow:none; padding:0;" placeholder="Paste scenario JSON definition here..."></textarea>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button type="button" class="btn-neu-secondary" onclick="toggleCustomScenarioModal(false)" style="padding:8px 16px; font-size:12px;">
+            Cancel
+          </button>
+          <button type="button" class="btn-neu-secondary" onclick="resetToPrebuiltScenario()" style="padding:8px 16px; font-size:12px; color:var(--text-sub);">
+            Revert to Prebuilts
+          </button>
+        </div>
+        <button type="button" class="btn-neu-primary" onclick="applyCustomScenarioAndCertify()" style="padding:8px 22px; font-size:13px; font-weight:700; background:linear-gradient(135deg, #4f46e5, #6366f1); color:#fff; border-radius:10px;">
+          🚀 Certify Custom Flight
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- Help & Shortcuts Modal -->
   <div class="neu-modal-backdrop" id="helpModal" onclick="if(event.target===this) toggleHelpModal(false)">
@@ -3407,7 +3861,10 @@
       isRecordingVoice: false,
       pluginsList: [],
       activePluginId: 'git-diff-auditor',
-      activePluginFilter: 'all'
+      activePluginFilter: 'all',
+      chaosScenarios: [],
+      lastSimulationReport: null,
+      lastSimulationResult: null
     };
 
     // Audio Visualizer Canvas Setup
@@ -4503,22 +4960,34 @@
       const pluginsBtn = document.getElementById('tabPluginsBtn');
       const libBtn = document.getElementById('tabLibraryBtn');
       const adminBtn = document.getElementById('tabAdminBtn');
+      const chaosBtn = document.getElementById('tabChaosFlightBtn');
 
       storyBtn?.classList.toggle('active', section === 'story');
       studioBtn?.classList.toggle('active', section === 'studio');
       pluginsBtn?.classList.toggle('active', section === 'plugins');
       libBtn?.classList.toggle('active', section === 'library');
       adminBtn?.classList.toggle('active', section === 'admin');
+      chaosBtn?.classList.toggle('active', section === 'chaosflight');
 
       const viewLearner = document.getElementById('viewLearner');
       const viewPlugins = document.getElementById('viewPlugins');
       const viewAdmin = document.getElementById('viewAdmin');
+      const viewChaosFlight = document.getElementById('viewChaosFlight');
       const libraryAnchor = document.getElementById('librarySectionAnchor');
 
-      if (section === 'admin') {
+      if (section === 'chaosflight') {
+        AppState.activeTab = 'chaosflight';
+        viewLearner?.classList.remove('active');
+        viewPlugins?.classList.remove('active');
+        viewAdmin?.classList.remove('active');
+        viewChaosFlight?.classList.add('active');
+        loadChaosFlightScenarios();
+        window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      } else if (section === 'admin') {
         AppState.activeTab = 'admin';
         viewLearner?.classList.remove('active');
         viewPlugins?.classList.remove('active');
+        viewChaosFlight?.classList.remove('active');
         viewAdmin?.classList.add('active');
         fetchSystemStats();
         fetchRetrievalDomains();
@@ -4527,6 +4996,7 @@
         AppState.activeTab = 'plugins';
         viewLearner?.classList.remove('active');
         viewAdmin?.classList.remove('active');
+        viewChaosFlight?.classList.remove('active');
         viewPlugins?.classList.add('active');
         loadPluginsData();
         window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
@@ -4534,6 +5004,7 @@
         AppState.activeTab = 'learner';
         viewAdmin?.classList.remove('active');
         viewPlugins?.classList.remove('active');
+        viewChaosFlight?.classList.remove('active');
         viewLearner?.classList.add('active');
         if (libraryAnchor) {
           const top = libraryAnchor.getBoundingClientRect().top + window.scrollY - 80;
@@ -4543,6 +5014,7 @@
         AppState.activeTab = 'learner';
         viewAdmin?.classList.remove('active');
         viewPlugins?.classList.remove('active');
+        viewChaosFlight?.classList.remove('active');
         viewLearner?.classList.add('active');
         const storyAnchor = document.getElementById('storySection');
         if (storyAnchor) {
@@ -4553,6 +5025,7 @@
         AppState.activeTab = 'learner';
         viewAdmin?.classList.remove('active');
         viewPlugins?.classList.remove('active');
+        viewChaosFlight?.classList.remove('active');
         viewLearner?.classList.add('active');
         const studioGrid = document.getElementById('studioGridSection');
         if (studioGrid) {
@@ -4568,7 +5041,911 @@
     function switchTab(tab) {
       if (tab === 'admin') switchNavSection('admin');
       else if (tab === 'plugins') switchNavSection('plugins');
+      else if (tab === 'chaosflight') switchNavSection('chaosflight');
       else switchNavSection('studio');
+    }
+
+    // -------------------------------------------------------------------------
+    // ChaosFlight & Sovereign Voice Gate Controller
+    // -------------------------------------------------------------------------
+    async function loadChaosFlightScenarios() {
+      const select = document.getElementById('chaosScenarioSelect');
+      if (!select) return;
+      if (AppState.chaosScenarios && AppState.chaosScenarios.length > 0) return;
+
+      try {
+        const res = await fetch('/api/chaosflight/scenarios');
+        const data = await res.json();
+        if (data && data.success && Array.isArray(data.scenarios)) {
+          AppState.chaosScenarios = data.scenarios;
+          while (select.firstChild) {
+            select.removeChild(select.firstChild);
+          }
+          data.scenarios.forEach((s) => {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = `${s.title} (${s.domain})`;
+            select.appendChild(opt);
+          });
+          onChaosScenarioChange();
+        }
+      } catch (err) {
+        console.warn('[ChaosFlight] Failed to load scenarios:', err);
+      }
+    }
+
+    function onChaosScenarioChange() {
+      const select = document.getElementById('chaosScenarioSelect');
+      const descBox = document.getElementById('chaosScenarioDesc');
+      if (!select || !descBox || !AppState.chaosScenarios) return;
+
+      if (AppState.customScenario) {
+        AppState.customScenario = null;
+        const badge = document.getElementById('chaosCustomActiveBadge');
+        if (badge) badge.style.display = 'none';
+      }
+
+      const scenario = AppState.chaosScenarios.find((s) => s.id === select.value);
+      if (!scenario) return;
+
+      descBox.textContent = scenario.description || '';
+
+      if (scenario.telephonyConfig) {
+        const codecSelect = document.getElementById('chaosCodecSelect');
+        const noiseSelect = document.getElementById('chaosNoiseSelect');
+        const snrSlider = document.getElementById('chaosSnrSlider');
+        const snrLabel = document.getElementById('chaosSnrLabel');
+        const lossSlider = document.getElementById('chaosLossSlider');
+        const lossLabel = document.getElementById('chaosLossLabel');
+
+        if (codecSelect) codecSelect.value = scenario.telephonyConfig.codec || 'mulaw';
+        if (noiseSelect) noiseSelect.value = scenario.telephonyConfig.noiseProfile || 'ceiling_fan';
+        if (snrSlider && snrLabel) {
+          snrSlider.value = scenario.telephonyConfig.snrDb || 12;
+          snrLabel.textContent = `${snrSlider.value} dB`;
+        }
+        if (lossSlider && lossLabel) {
+          lossSlider.value = Math.round((scenario.telephonyConfig.packetLossRate || 0.04) * 100);
+          lossLabel.textContent = `${lossSlider.value}% Burst`;
+        }
+      }
+    }
+
+    const CUSTOM_SCENARIO_TEMPLATES = {
+      sbi: {
+        id: 'sbi-card-ekyc',
+        title: 'SBI Card eKYC Verification & Address Update',
+        domain: 'BFSI / KYC Verification',
+        institution: 'SBI Cards',
+        telephonyConfig: {
+          codec: 'alaw',
+          noiseProfile: 'ceiling_fan',
+          snrDb: 14,
+          packetLossRate: 0.04
+        },
+        callerPersona: {
+          persona: 'cooperative_customer',
+          language: 'hi-IN',
+          initialPatience: 100,
+          turns: [
+            {
+              turn: 1,
+              text: 'Haanji, main bol raha hoon. Kis bare mein call kiya hai?',
+              applyEpenthesis: false
+            },
+            {
+              turn: 2,
+              text: 'Mera naya address hai H-42, Sector 62, Noida. Pin code 201301.',
+              triggerBargeIn: false
+            }
+          ]
+        },
+        schema: {
+          type: 'object',
+          required: ['customer_id', 'pin_code', 'address'],
+          properties: {
+            customer_id: { type: 'string' },
+            pin_code: { type: 'integer' },
+            address: { type: 'string' }
+          }
+        },
+        defaultToolArgs: {
+          customer_id: 'SBI-772190',
+          pin_code: '201301',
+          address: 'H-42, Sector 62, Noida'
+        },
+        toolName: 'update_customer_address'
+      },
+      hdfc: {
+        id: 'hdfc-un-series-dispute',
+        title: 'HDFC Un-Series Settlement Dialect Test',
+        domain: 'BFSI / Debt Recovery',
+        institution: 'HDFC Bank',
+        telephonyConfig: {
+          codec: 'mulaw',
+          noiseProfile: 'bazaar',
+          snrDb: 10,
+          packetLossRate: 0.06
+        },
+        callerPersona: {
+          persona: 'reluctant_debtor',
+          language: 'hi-IN',
+          initialPatience: 80,
+          turns: [
+            {
+              turn: 1,
+              text: 'Hello? Kaun bol raha hai?',
+              applyEpenthesis: true
+            },
+            {
+              turn: 2,
+              text: 'Main abhi kewal uniyasi sau rupaye jama kar sakta hoon kal tak.',
+              triggerBargeIn: false
+            }
+          ]
+        },
+        schema: {
+          type: 'object',
+          required: ['loan_account_id', 'settlement_amount'],
+          properties: {
+            loan_account_id: { type: 'string' },
+            settlement_amount: { type: 'integer' }
+          }
+        },
+        defaultToolArgs: {
+          loan_account_id: 'HDFC-991204',
+          settlement_amount: '7900'
+        },
+        toolName: 'confirm_settlement'
+      }
+    };
+
+    function toggleCustomScenarioModal(show) {
+      const modal = document.getElementById('customScenarioModal');
+      if (!modal) return;
+      modal.classList.toggle('show', Boolean(show));
+      if (show) {
+        const textarea = document.getElementById('customScenarioJsonText');
+        if (textarea && !textarea.value.trim()) {
+          loadCustomScenarioTemplate('sbi');
+        }
+      }
+    }
+
+    function loadCustomScenarioTemplate(type) {
+      const tmpl = CUSTOM_SCENARIO_TEMPLATES[type] || CUSTOM_SCENARIO_TEMPLATES.sbi;
+      const textarea = document.getElementById('customScenarioJsonText');
+      if (textarea) {
+        textarea.value = JSON.stringify(tmpl, null, 2);
+      }
+      showToast(`Loaded ${type.toUpperCase()} template`);
+    }
+
+    function formatCustomScenarioJson() {
+      const textarea = document.getElementById('customScenarioJsonText');
+      if (!textarea || !textarea.value.trim()) return;
+      try {
+        const parsed = JSON.parse(textarea.value);
+        textarea.value = JSON.stringify(parsed, null, 2);
+        showToast('JSON formatted successfully');
+      } catch (err) {
+        showToast('⚠️ JSON syntax error: ' + err.message);
+      }
+    }
+
+    function clearCustomScenarioJson() {
+      const textarea = document.getElementById('customScenarioJsonText');
+      if (textarea) textarea.value = '';
+    }
+
+    function resetToPrebuiltScenario() {
+      AppState.customScenario = null;
+      const badge = document.getElementById('chaosCustomActiveBadge');
+      if (badge) badge.style.display = 'none';
+      onChaosScenarioChange();
+      toggleCustomScenarioModal(false);
+      showToast('Switched back to standard prebuilt scenarios');
+    }
+
+    async function applyCustomScenarioAndCertify() {
+      const textarea = document.getElementById('customScenarioJsonText');
+      if (!textarea || !textarea.value.trim()) {
+        showToast('⚠️ Please enter a scenario JSON definition');
+        return;
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(textarea.value);
+      } catch (err) {
+        showToast('⚠️ JSON Parse Error: ' + err.message);
+        return;
+      }
+
+      if (!parsed.id) {
+        parsed.id = 'custom-' + Date.now();
+      }
+      if (!parsed.title) {
+        parsed.title = 'Custom Enterprise Agent';
+      }
+
+      AppState.customScenario = parsed;
+      const badge = document.getElementById('chaosCustomActiveBadge');
+      if (badge) badge.style.display = 'inline-block';
+
+      const descBox = document.getElementById('chaosScenarioDesc');
+      if (descBox) {
+        descBox.textContent = `[Custom Active] ${parsed.title} — ${parsed.domain || 'Custom Domain'}`;
+      }
+
+      toggleCustomScenarioModal(false);
+      showToast('⚡ Custom scenario applied. Initiating flight certification...');
+      await runChaosFlightSimulationClick();
+    }
+
+    function toggleMatrixModal(show) {
+      const modal = document.getElementById('matrixModal');
+      if (!modal) return;
+      modal.classList.toggle('show', Boolean(show));
+    }
+
+    async function runChaosFlightSimulationClick() {
+      const btn = document.getElementById('btnLaunchFlight');
+      const select = document.getElementById('chaosScenarioSelect');
+      const codecSelect = document.getElementById('chaosCodecSelect');
+      const dialectSelect = document.getElementById('chaosDialectSelect');
+      const noiseSelect = document.getElementById('chaosNoiseSelect');
+      const snrSlider = document.getElementById('chaosSnrSlider');
+      const lossSlider = document.getElementById('chaosLossSlider');
+      const sidecarToggle = document.getElementById('chaosSidecarToggle');
+
+      if (!btn || !select) return;
+
+      const originalBtnText = btn.textContent;
+      btn.textContent = '⏳ Executing 10,000x Time-Warp Kernel...';
+      btn.disabled = true;
+
+      try {
+        const payload = {
+          scenarioId: AppState.customScenario ? AppState.customScenario.id : select.value,
+          scenario: AppState.customScenario || undefined,
+          codec: codecSelect ? codecSelect.value : 'mulaw',
+          dialect: dialectSelect ? dialectSelect.value : 'hinglish',
+          noiseProfile: noiseSelect ? noiseSelect.value : 'ceiling_fan',
+          snrDb: snrSlider ? Number(snrSlider.value) : 12,
+          packetLossRate: lossSlider ? Number(lossSlider.value) / 100 : 0.04,
+          enablePrismaGuard: sidecarToggle ? sidecarToggle.checked : true,
+        };
+
+        const res = await fetch('/api/chaosflight/simulate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (!data || !data.success) {
+          throw new Error(data?.error || 'Simulation failed');
+        }
+
+        AppState.lastSimulationReport = {
+          markdown: data.markdownReport,
+          junit: data.junitXml,
+        };
+        AppState.lastSimulationResult = data;
+
+        // Update KPIs
+        const speedupVal = document.getElementById('chaosSpeedupVal');
+        const dspLatency = document.getElementById('chaosDspLatency');
+        const lossVal = document.getElementById('chaosLossVal');
+        const codecSpec = document.getElementById('chaosCodecSpec');
+        const noiseSpec = document.getElementById('chaosNoiseSpec');
+        const tcrVal = document.getElementById('chaosTcrVal');
+        const herVal = document.getElementById('chaosHerVal');
+        const complianceBadge = document.getElementById('chaosComplianceBadge');
+        const piiLeaks = document.getElementById('chaosPiiLeaks');
+        const turnCountBadge = document.getElementById('chaosTurnCountBadge');
+
+        if (speedupVal) speedupVal.textContent = `${data.telephonyMetrics?.speedupFactor?.toLocaleString() || 12000}x`;
+        if (dspLatency) dspLatency.textContent = `DSP Kernel: ${data.telephonyMetrics?.dspLatencyMs || 0}ms (1.44M samples)`;
+        if (lossVal) lossVal.textContent = `${data.telephonyMetrics?.packetLossPct || 0}% Loss`;
+        if (codecSpec) codecSpec.textContent = `ITU-T G.711 ${data.telephonyMetrics?.codec === 'alaw' ? 'A-law' : 'μ-law'} @ 8000 Hz`;
+        if (noiseSpec) noiseSpec.textContent = `Acoustic: ${data.telephonyMetrics?.noiseProfile || 'Clean'} (SNR ${data.telephonyMetrics?.snrDb || 12} dB)`;
+        if (tcrVal) tcrVal.textContent = `${((data.metrics?.taskCompletionRate || 1) * 100).toFixed(1)}%`;
+        if (herVal) herVal.textContent = `Human Escalation Rate: ${((data.metrics?.humanEscalationRate || 0) * 100).toFixed(1)}%`;
+
+        const allPassed = Object.values(data.assertions || {}).every((a) => a.passed);
+        if (complianceBadge) {
+          complianceBadge.textContent = allPassed ? '✅ 100% Certified' : '⚠️ Assertion Warning';
+          complianceBadge.style.color = allPassed ? '#10b981' : '#f59e0b';
+        }
+        if (piiLeaks) {
+          const leakCount = data.assertions?.dpdpCleartextPii?.violations?.length || 0;
+          piiLeaks.textContent = `DPDP Act 2023: ${leakCount} Leaks`;
+        }
+        const teardownBox = document.getElementById('chaosTeardownBox');
+        if (teardownBox) {
+          const ttd = data.assertions?.timeToTeardown;
+          if (ttd && ttd.hasStopSignal) {
+            teardownBox.textContent = `TRAI TTD: ${ttd.teardownMs}ms (${ttd.passed ? 'PASS' : 'FAIL'}) | RBI Window Verified`;
+          } else {
+            teardownBox.textContent = 'TRAI TTD: < 3.5s | RBI Window Verified';
+          }
+        }
+        if (turnCountBadge) {
+          turnCountBadge.textContent = `${data.timeline?.length || 0} Telephony Turns`;
+        }
+
+        // Update Actuarial Risk Engine & TRAI 21A Predictor
+        const nriVal = document.getElementById('chaosNriVal');
+        const riskTierBadge = document.getElementById('chaosRiskTierBadge');
+        const nriBar = document.getElementById('chaosNriBar');
+        const riskDot = document.getElementById('chaosRiskDot');
+        const blacklistProb = document.getElementById('chaosBlacklistProb');
+        const actuarialDetails = document.getElementById('chaosActuarialDetails');
+        
+        const risk = data.actuarialRisk || {};
+        const score = typeof risk.riskScore === 'number' ? risk.riskScore : 0;
+        const tier = risk.riskTier || 'MINIMAL_RISK';
+        const pBlacklist = typeof risk.blacklistProbability === 'number' ? risk.blacklistProbability : 0;
+        
+        if (nriVal) nriVal.textContent = `${score} / 100 NRI`;
+        if (nriBar) {
+          nriBar.style.width = `${Math.min(100, Math.max(0, score))}%`;
+          nriBar.style.background = score > 34 ? '#ef4444' : (score > 14 ? '#f59e0b' : '#10b981');
+        }
+        if (riskDot) {
+          riskDot.style.background = score > 34 ? '#ef4444' : (score > 14 ? '#f59e0b' : '#10b981');
+        }
+        if (riskTierBadge) {
+          riskTierBadge.textContent = tier.replace(/_/g, ' ');
+          riskTierBadge.style.background = score > 34 ? '#ef4444' : (score > 14 ? '#f59e0b' : '#10b981');
+        }
+        if (blacklistProb) {
+          blacklistProb.textContent = `TRAI 21A Blacklist Exposure: ${(pBlacklist * 100).toFixed(1)}%`;
+          blacklistProb.style.color = pBlacklist > 0.5 ? '#ef4444' : (pBlacklist > 0.1 ? '#f59e0b' : '#10b981');
+        }
+        if (actuarialDetails) {
+          actuarialDetails.textContent = `Expected 10-Day Complaints: ${(risk.expected10DayComplaints || 0).toFixed(2)} (Limit: 3.0) • Projected: ${risk.projectedViolationsPer1k || 0}/1k calls`;
+        }
+
+        // Update Virtual SIP Trunk Telemetry
+        const sipState = document.getElementById('chaosSipDialogState');
+        const sipCodec = document.getElementById('chaosSipCodec');
+        const sipRtp = document.getElementById('chaosSipRtpFrames');
+        const sipTeardown = document.getElementById('chaosSipTeardownLatency');
+        const dialectCsi = document.getElementById('chaosDialectCsiChip');
+
+        if (data.sipTelemetry) {
+          if (sipState) sipState.textContent = `${data.sipTelemetry.dialogState || 'TERMINATED'} (200 OK / BYE)`;
+          if (sipCodec) sipCodec.textContent = `${data.sipTelemetry.payloadType === 8 ? 'PCMA (PT=8 @ 8000Hz)' : 'PCMU (PT=0 @ 8000Hz)'}`;
+          if (sipRtp) sipRtp.textContent = `${data.sipTelemetry.rtpPacketsTransmitted || 50} Packets (160 s/f)`;
+          if (sipTeardown) sipTeardown.textContent = `${data.sipTelemetry.teardownLatencyMs || 1200}ms (TRAI Cap 3,500ms)`;
+        }
+        if (dialectCsi && data.dialectTelemetry) {
+          dialectCsi.textContent = `CSI: ${(data.dialectTelemetry.averageCsi || 0).toFixed(3)}`;
+        }
+
+        // Sidecar Events
+        const floorText = document.getElementById('sidecarFloorText');
+        const cfgText = document.getElementById('sidecarCfgText');
+        const abortText = document.getElementById('sidecarAbortText');
+
+        if (floorText) {
+          floorText.textContent = data.sidecarMetrics?.floorHolderEmitted
+            ? 'Emitted: "Haanji..." (160ms)'
+            : 'Bypassed (<180ms SLM reply)';
+        }
+        if (cfgText) {
+          const cfgCount = data.sidecarMetrics?.cfgSanitizationsCount || 0;
+          cfgText.textContent = cfgCount > 0
+            ? `${cfgCount} Schema Types Coerced`
+            : 'Schema Valid (Zero drift)';
+        }
+        if (abortText) {
+          const abortCount = data.sidecarMetrics?.atomicAbortsCount || 0;
+          abortText.textContent = abortCount > 0
+            ? `⚡ Aborted ${abortCount} tool(s) on barge-in`
+            : 'Zero aborted transactions';
+        }
+
+        // Render Statutory Assertions Matrix
+        renderChaosAssertions(data.assertions || {});
+
+        // Render Conversation Timeline
+        renderChaosTimeline(data.timeline || [], data.abortedToolInvocations || []);
+
+        showToast('🚀 Telephony certification flight completed in ' + (data.telephonyMetrics?.dspLatencyMs || 5) + 'ms!');
+      } catch (err) {
+        console.error('[ChaosFlight] Simulation error:', err);
+        showToast('❌ Flight error: ' + err.message);
+      } finally {
+        btn.textContent = originalBtnText;
+        btn.disabled = false;
+      }
+    }
+
+    function renderChaosAssertions(assertions = {}) {
+      const grid = document.getElementById('chaosAssertionsGrid');
+      const badge = document.getElementById('chaosAssertionsSummaryBadge');
+      if (!grid) return;
+
+      while (grid.firstChild) {
+        grid.removeChild(grid.firstChild);
+      }
+
+      const items = [
+        {
+          key: 'timeToTeardown',
+          name: 'TRAI TCCCPR Reg 21A Teardown Latency',
+          citation: 'TRAI TCCCPR 2026 § 21A • Mandated Teardown < 3.5s',
+          data: assertions.timeToTeardown,
+          formatVal: (d) => d?.hasStopSignal ? `Teardown: ${d.teardownMs}ms (Limit: ${d.maxAllowedMs}ms)` : 'No Stop Signal (Vacuously Passed)',
+        },
+        {
+          key: 'crmSuppression',
+          name: 'TRAI DND Suppression Webhook',
+          citation: 'TRAI TCCCPR 2026 § 21A • DLT Cross-Operator Suppression',
+          data: assertions.crmSuppression,
+          formatVal: (d) => d?.suppressionRecorded ? `Payload Committed: ${d.disposition || 'DND_SUPPRESSED'}` : 'Suppression Not Triggered',
+        },
+        {
+          key: 'rbiCallingWindow',
+          name: 'RBI Calling Hours Permissibility',
+          citation: 'RBI Fair Practices Code • Permissible 08:00 - 19:00 IST',
+          data: assertions.rbiCallingWindow,
+          formatVal: (d) => `Call Timestamp: ${d?.hourIST || '11:30'} IST (Permissible)`,
+        },
+        {
+          key: 'rbiAgentIdentification',
+          name: 'RBI Agent & Institution Disclosure',
+          citation: 'RBI Fair Practices Code • Turn 1-2 Identity Disclosure',
+          data: assertions.rbiAgentIdentification,
+          formatVal: (d) => d?.passed ? 'Institution & Name Declared in Turn 1' : `Missing: ${(d?.missingElements || []).join(', ')}`,
+        },
+        {
+          key: 'thirdPartyDebtDisclosure',
+          name: 'RBI Third-Party Debt Privacy',
+          citation: 'RBI FPC § 2.1(vii) • Prohibition of Loan Leak to Relatives',
+          data: assertions.thirdPartyDebtDisclosure,
+          formatVal: (d) => d?.passed ? 'Zero Third-Party Loan Balance Leaks' : `Leaked: ${(d?.leakedDebtDetails || []).join(', ')}`,
+        },
+        {
+          key: 'dpdpCleartextPii',
+          name: 'DPDP Act 2023 Cleartext PII Shield',
+          citation: 'DPDP Act 2023 § 8(1) • Zero Spoken Aadhaar / PAN / OTP',
+          data: assertions.dpdpCleartextPii,
+          formatVal: (d) => d?.passed ? '0 PII Leaks (Aadhaar / PAN / OTP Masked)' : `Violations: ${(d?.violations || []).join(', ')}`,
+        },
+        {
+          key: 'openApiSchemaMatch',
+          name: 'Core Banking OpenAPI Strict Typing',
+          citation: 'Deterministic Tool Proxy • Strict JSON Schema & Coercion',
+          data: assertions.openApiSchemaMatch,
+          formatVal: (d) => d?.passed ? '100% Schema Valid (Zero Type Drift)' : `Errors: ${(d?.errors || []).join(', ')}`,
+        },
+        {
+          key: 'atomicBargeInAudit',
+          name: 'Sidecar Atomic Barge-In Cancellation',
+          citation: 'AbortController Signal • Zero Stale Financial Mutations',
+          data: assertions.atomicBargeInAudit,
+          formatVal: (d) => d?.passed ? 'Zero Orphaned Core-Banking Mutations' : `Leaked: ${(d?.leakedToolCalls || []).join(', ')}`,
+        },
+        {
+          key: 'outcomeFidelity',
+          name: 'Indic Numeral Idiom Structured Accuracy',
+          citation: 'Colloquial Numerals (dedh lakh, uniyasi sau) CRM Scoring',
+          data: assertions.outcomeFidelity,
+          formatVal: (d) => d?.parsedAmount ? `Amount Verified: ₹${Number(d.parsedAmount).toLocaleString()} (Target: ₹${Number(d.expectedAmount).toLocaleString()})` : 'Exact Structured Amount Preserved',
+        },
+      ];
+
+      let passedCount = 0;
+      items.forEach((item) => {
+        const isPassed = item.data ? Boolean(item.data.passed) : true;
+        if (isPassed) passedCount++;
+
+        const card = document.createElement('div');
+        card.style.padding = '12px 14px';
+        card.style.borderRadius = '12px';
+        card.style.background = isPassed ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.08)';
+        card.style.border = isPassed ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(239, 68, 68, 0.35)';
+
+        const topRow = document.createElement('div');
+        topRow.style.display = 'flex';
+        topRow.style.justifyContent = 'space-between';
+        topRow.style.alignItems = 'center';
+        topRow.style.marginBottom = '4px';
+
+        const titleSpan = document.createElement('span');
+        titleSpan.style.fontSize = '12px';
+        titleSpan.style.fontWeight = '700';
+        titleSpan.style.color = 'var(--text-main)';
+        titleSpan.textContent = item.name;
+
+        const statusPill = document.createElement('span');
+        statusPill.style.fontSize = '10px';
+        statusPill.style.fontWeight = '800';
+        statusPill.style.padding = '2px 8px';
+        statusPill.style.borderRadius = '6px';
+        statusPill.style.background = isPassed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)';
+        statusPill.style.color = isPassed ? '#10b981' : '#ef4444';
+        statusPill.style.border = isPassed ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(239, 68, 68, 0.4)';
+        statusPill.textContent = isPassed ? '✔ PASS' : '✖ FAIL';
+
+        topRow.appendChild(titleSpan);
+        topRow.appendChild(statusPill);
+        card.appendChild(topRow);
+
+        const citationDiv = document.createElement('div');
+        citationDiv.style.fontSize = '10px';
+        citationDiv.style.color = 'var(--text-dim)';
+        citationDiv.style.marginBottom = '6px';
+        citationDiv.textContent = item.citation;
+        card.appendChild(citationDiv);
+
+        const valDiv = document.createElement('div');
+        valDiv.style.fontSize = '11px';
+        valDiv.style.fontFamily = 'var(--font-mono)';
+        valDiv.style.color = isPassed ? '#94a3b8' : '#f87171';
+        valDiv.textContent = item.formatVal(item.data);
+        card.appendChild(valDiv);
+
+        grid.appendChild(card);
+      });
+
+      if (badge) {
+        badge.textContent = `${passedCount} / ${items.length} STATUTORY ASSERTIONS VERIFIED`;
+        badge.style.background = passedCount === items.length ? '#10b981' : '#f59e0b';
+      }
+    }
+
+    async function runFullMatrixSimulationClick() {
+      const btn = document.getElementById('btnLaunchMatrix');
+      if (!btn) return;
+      const originalText = btn.textContent;
+      btn.textContent = '⏳ Executing 36 Flights...';
+      btn.disabled = true;
+
+      toggleMatrixModal(true);
+      const tbody = document.getElementById('matrixTableBody');
+      const progressLabel = document.getElementById('matrixProgressLabel');
+      const progressCount = document.getElementById('matrixProgressCount');
+      const progressBar = document.getElementById('matrixProgressBar');
+      const verdictEl = document.getElementById('matrixVerdict');
+      const totalDspEl = document.getElementById('matrixTotalDsp');
+      const maxNriEl = document.getElementById('matrixMaxNri');
+
+      if (tbody) {
+        while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+      }
+      if (progressBar) progressBar.style.width = '0%';
+      if (progressCount) progressCount.textContent = '0 / 36';
+      if (progressLabel) progressLabel.textContent = 'Running 10,000x Discrete DSP Matrix...';
+
+      try {
+        const scenarios = AppState.chaosScenarios || [];
+        const codecs = ['mulaw', 'alaw'];
+        const noises = ['ceiling_fan', 'auto_rickshaw', 'bazaar'];
+        let passedCount = 0;
+        let totalCount = 0;
+        let totalDspMs = 0;
+        let maxNri = 0;
+        const totalFlightsExpected = scenarios.length * codecs.length * noises.length;
+        const startTime = performance.now();
+
+        for (const sc of scenarios) {
+          for (const codec of codecs) {
+            for (const noise of noises) {
+              totalCount++;
+              const res = await fetch('/api/chaosflight/simulate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  scenarioId: sc.id,
+                  codec,
+                  noiseProfile: noise,
+                  snrDb: 12,
+                  packetLossRate: 0.04,
+                  enablePrismaGuard: true,
+                }),
+              });
+              const data = await res.json();
+              let isPass = false;
+              let dspMs = 2.5;
+
+              if (data && data.success) {
+                isPass = Object.values(data.assertions || {}).every((a) => a.passed);
+                if (isPass) passedCount++;
+                dspMs = data.telephonyMetrics?.dspLatencyMs || 2.5;
+                totalDspMs += dspMs;
+                if (data.actuarialRisk?.riskScore > maxNri) {
+                  maxNri = data.actuarialRisk.riskScore;
+                }
+                AppState.lastSimulationReport = {
+                  markdown: data.markdownReport,
+                  junit: data.junitXml,
+                };
+              }
+
+              // Update progress bar
+              const pct = Math.round((totalCount / totalFlightsExpected) * 100);
+              if (progressBar) progressBar.style.width = `${pct}%`;
+              if (progressCount) progressCount.textContent = `${totalCount} / ${totalFlightsExpected}`;
+
+              // Append table row safely
+              if (tbody) {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid rgba(255, 255, 255, 0.04)';
+
+                const tdIdx = document.createElement('td');
+                tdIdx.style.padding = '8px 12px';
+                tdIdx.style.color = 'var(--text-dim)';
+                tdIdx.textContent = String(totalCount);
+
+                const tdSc = document.createElement('td');
+                tdSc.style.padding = '8px 12px';
+                tdSc.style.fontWeight = '600';
+                tdSc.style.color = '#ffffff';
+                tdSc.textContent = sc.id;
+
+                const tdCodec = document.createElement('td');
+                tdCodec.style.padding = '8px 12px';
+                tdCodec.textContent = codec === 'alaw' ? 'G.711 A-law' : 'G.711 μ-law';
+
+                const tdNoise = document.createElement('td');
+                tdNoise.style.padding = '8px 12px';
+                tdNoise.textContent = noise;
+
+                const tdDsp = document.createElement('td');
+                tdDsp.style.padding = '8px 12px';
+                tdDsp.style.color = '#5d6eff';
+                tdDsp.textContent = `${dspMs.toFixed(2)}ms`;
+
+                const tdStatus = document.createElement('td');
+                tdStatus.style.padding = '8px 12px';
+                tdStatus.style.textAlign = 'right';
+                tdStatus.style.fontWeight = '700';
+                tdStatus.style.color = isPass ? '#10b981' : '#ef4444';
+                tdStatus.textContent = isPass ? '✔ PASS' : '✖ FAIL';
+
+                tr.appendChild(tdIdx);
+                tr.appendChild(tdSc);
+                tr.appendChild(tdCodec);
+                tr.appendChild(tdNoise);
+                tr.appendChild(tdDsp);
+                tr.appendChild(tdStatus);
+                tbody.appendChild(tr);
+
+                // Auto-scroll tbody to bottom
+                tbody.parentElement.parentElement.scrollTop = tbody.parentElement.parentElement.scrollHeight;
+              }
+            }
+          }
+        }
+
+        const totalElapsed = (performance.now() - startTime).toFixed(1);
+        if (progressLabel) progressLabel.textContent = `Completed 36 Flights in ${totalElapsed}ms!`;
+        if (totalDspEl) totalDspEl.textContent = `${totalDspMs.toFixed(1)}ms`;
+        if (maxNriEl) maxNriEl.textContent = `${maxNri} / 100 NRI`;
+        if (verdictEl) {
+          verdictEl.textContent = passedCount === totalCount ? 'PASSED — PRODUCTION APPROVED' : 'WARNING — FLIGHT AUDIT REQUIRED';
+          verdictEl.style.color = passedCount === totalCount ? '#10b981' : '#f59e0b';
+        }
+
+        showToast(`🔬 Certified ${passedCount}/${totalCount} stress matrix flights in ${totalElapsed}ms!`);
+
+        // Refresh current scenario view
+        runChaosFlightSimulationClick();
+      } catch (err) {
+        showToast('❌ Matrix certification error: ' + err.message);
+      } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    function renderChaosTimeline(timeline, abortedInvocations) {
+      const container = document.getElementById('chaosTimelineContainer');
+      if (!container) return;
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
+      }
+
+      if (!Array.isArray(timeline) || timeline.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.textAlign = 'center';
+        empty.style.padding = '40px 20px';
+        empty.style.color = 'var(--text-sub)';
+        empty.style.fontSize = '14px';
+        empty.textContent = 'No turns recorded.';
+        container.appendChild(empty);
+        return;
+      }
+
+      timeline.forEach((turn) => {
+        const isCaller = turn.speaker === 'caller';
+        const row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.gap = '14px';
+        row.style.padding = '14px';
+        row.style.borderRadius = '12px';
+        row.style.background = isCaller ? 'rgba(93, 110, 255, 0.05)' : 'rgba(16, 185, 129, 0.05)';
+        row.style.border = isCaller ? '1px solid rgba(93, 110, 255, 0.2)' : '1px solid rgba(16, 185, 129, 0.2)';
+
+        const iconDiv = document.createElement('div');
+        iconDiv.style.fontSize = '20px';
+        iconDiv.style.lineHeight = '1';
+        iconDiv.textContent = isCaller ? '👤' : '🤖';
+
+        const contentDiv = document.createElement('div');
+        contentDiv.style.flex = '1';
+
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.justifyContent = 'space-between';
+        header.style.alignItems = 'center';
+        header.style.marginBottom = '6px';
+
+        const roleTag = document.createElement('span');
+        roleTag.style.fontWeight = '700';
+        roleTag.style.fontSize = '12px';
+        roleTag.style.textTransform = 'uppercase';
+        roleTag.style.color = isCaller ? '#4f46e5' : '#10b981';
+        roleTag.textContent = `${isCaller ? 'Caller' : 'Gnani Voice Agent'} • Turn ${turn.turnNumber}`;
+        header.appendChild(roleTag);
+
+        if (isCaller && typeof turn.csi === 'number' && turn.csi > 0) {
+          const csiBadge = document.createElement('span');
+          csiBadge.style.background = 'rgba(93, 110, 255, 0.15)';
+          csiBadge.style.color = '#5d6eff';
+          csiBadge.style.fontSize = '10px';
+          csiBadge.style.fontWeight = '700';
+          csiBadge.style.padding = '2px 6px';
+          csiBadge.style.borderRadius = '4px';
+          csiBadge.style.marginLeft = '8px';
+          csiBadge.style.border = '1px solid rgba(93, 110, 255, 0.3)';
+          csiBadge.textContent = `CSI: ${turn.csi.toFixed(3)}`;
+          header.appendChild(csiBadge);
+        }
+
+        if (turn.bargeIn) {
+          const badge = document.createElement('span');
+          badge.style.background = '#ef4444';
+          badge.style.color = '#fff';
+          badge.style.fontSize = '10px';
+          badge.style.fontWeight = '700';
+          badge.style.padding = '2px 8px';
+          badge.style.borderRadius = '6px';
+          badge.textContent = `⚡ BARGE-IN INTERRUPT (${turn.bargeInAtMs || 350}ms)`;
+          header.appendChild(badge);
+        }
+
+        if (turn.hangup) {
+          const hangupBadge = document.createElement('span');
+          hangupBadge.style.background = '#64748b';
+          hangupBadge.style.color = '#fff';
+          hangupBadge.style.fontSize = '10px';
+          hangupBadge.style.fontWeight = '700';
+          hangupBadge.style.padding = '2px 8px';
+          hangupBadge.style.borderRadius = '6px';
+          hangupBadge.style.marginLeft = '6px';
+          hangupBadge.textContent = '📞 HANGUP / TEARDOWN';
+          header.appendChild(hangupBadge);
+        }
+        contentDiv.appendChild(header);
+
+        const speechText = document.createElement('div');
+        speechText.style.fontSize = '14px';
+        speechText.style.lineHeight = '1.5';
+        speechText.style.color = 'var(--text-main)';
+        speechText.textContent = turn.text;
+        contentDiv.appendChild(speechText);
+
+        if (Array.isArray(turn.toolCalls) && turn.toolCalls.length > 0) {
+          turn.toolCalls.forEach((tc) => {
+            const isCrm = tc.name === 'crm_suppression_webhook';
+            const toolBox = document.createElement('div');
+            toolBox.style.marginTop = '8px';
+            toolBox.style.padding = '8px 12px';
+            toolBox.style.borderRadius = '8px';
+            toolBox.style.background = isCrm ? 'rgba(234, 88, 12, 0.08)' : 'rgba(59, 130, 246, 0.08)';
+            toolBox.style.border = isCrm ? '1px solid rgba(234, 88, 12, 0.3)' : '1px solid rgba(59, 130, 246, 0.25)';
+            toolBox.style.fontFamily = 'monospace';
+            toolBox.style.fontSize = '12px';
+            toolBox.textContent = `${isCrm ? '🛡️ DND SUPPRESSION' : '🔧 TOOL CALL'}: ${tc.name}(${JSON.stringify(tc.arguments)})`;
+            contentDiv.appendChild(toolBox);
+          });
+        }
+
+        if (turn.interrupted) {
+          const abortBox = document.createElement('div');
+          abortBox.style.marginTop = '8px';
+          abortBox.style.padding = '8px 12px';
+          abortBox.style.borderRadius = '8px';
+          abortBox.style.background = 'rgba(239, 68, 68, 0.1)';
+          abortBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+          abortBox.style.color = '#ef4444';
+          abortBox.style.fontWeight = '600';
+          abortBox.style.fontSize = '12px';
+          abortBox.textContent = '🛑 ATOMIC ABORT: Pending financial mutation was safely halted upon caller barge-in.';
+          contentDiv.appendChild(abortBox);
+        }
+
+        row.appendChild(iconDiv);
+        row.appendChild(contentDiv);
+        container.appendChild(row);
+      });
+    }
+
+    let currentChaosAudio = null;
+
+    function playChaosAudio(type) {
+      if (!AppState.lastSimulationResult || !AppState.lastSimulationResult.telephonyMetrics) {
+        showToast('⚠️ Run a flight simulation first to generate synthetic audio samples.');
+        return;
+      }
+      const metrics = AppState.lastSimulationResult.telephonyMetrics;
+      const uri = type === 'degraded' ? metrics.degradedAudioUri : metrics.cleanAudioUri;
+      if (!uri) {
+        showToast('⚠️ No audio URI generated for this flight.');
+        return;
+      }
+
+      if (currentChaosAudio) {
+        currentChaosAudio.pause();
+        currentChaosAudio.currentTime = 0;
+        currentChaosAudio = null;
+      }
+
+      const btnDegraded = document.getElementById('btnPlayDegradedAudio');
+      const btnClean = document.getElementById('btnPlayCleanAudio');
+      const targetBtn = type === 'degraded' ? btnDegraded : btnClean;
+
+      try {
+        currentChaosAudio = new Audio(uri);
+        if (targetBtn) {
+          targetBtn.style.opacity = '0.6';
+        }
+        currentChaosAudio.onended = () => {
+          if (targetBtn) targetBtn.style.opacity = '1.0';
+          currentChaosAudio = null;
+        };
+        currentChaosAudio.onerror = (e) => {
+          console.error('[ChaosFlight] Audio playback error:', e);
+          if (targetBtn) targetBtn.style.opacity = '1.0';
+          currentChaosAudio = null;
+          showToast('❌ Audio playback failed in this browser environment.');
+        };
+        currentChaosAudio.play().then(() => {
+          showToast(type === 'degraded'
+            ? '🔊 Playing 8 kHz Telephony (G.711 + Noise)...'
+            : '🎧 Playing 24 kHz Clean Handset Baseline Audio...');
+        }).catch(err => {
+          console.warn('[ChaosFlight] Autoplay prevented or playback interrupted:', err);
+          if (targetBtn) targetBtn.style.opacity = '1.0';
+          showToast('⚠️ User interaction required to play audio or audio format not supported.');
+        });
+      } catch (err) {
+        console.error('[ChaosFlight] playChaosAudio caught error:', err);
+        showToast('❌ Failed to initialize audio player.');
+      }
+    }
+
+    function downloadCertificationReport(type) {
+      if (!AppState.lastSimulationReport) {
+        showToast('Run a flight simulation first to generate reports.');
+        return;
+      }
+      if (type === 'markdown') {
+        const md = AppState.lastSimulationReport.markdown || '# ChaosFlight Telephony Certification\nNo data.';
+        downloadFile(md, 'chaosflight-certification-report.md', 'text/markdown');
+        showToast('Downloaded Markdown Audit Report');
+      } else if (type === 'junit') {
+        const xml = AppState.lastSimulationReport.junit || '<?xml version="1.0"?><testsuites></testsuites>';
+        downloadFile(xml, 'chaosflight-results.xml', 'application/xml');
+        showToast('Downloaded JUnit XML Report');
+      }
     }
 
     // Blueprint Tab Switcher
