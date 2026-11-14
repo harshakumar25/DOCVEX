@@ -66,6 +66,7 @@
   let activeUtterances = [];
   let speechKeepAliveInterval = null;
   let chatterboxEnabled = false;
+  let activeAudioProvider = 'chatterbox';
   let activeAudio = null;
   let chatterboxAudioQueue = [];
   let isChatterboxPlaying = false;
@@ -2267,6 +2268,9 @@
 
         if (event === 'metadata') {
           chatterboxEnabled = Boolean(data.chatterbox?.enabled);
+          if (data.chatterbox?.provider) {
+            activeAudioProvider = data.chatterbox.provider;
+          }
           updateHUDStatus(isFollowUp ? '🗣️ Preparing answer…' : (isContinueResume ? '▶ Resuming voice…' : '🎓 Analyzing concepts…'));
           if (data.groundingStatus) {
             updateHUDBadge(data.groundingStatus);
@@ -2295,7 +2299,8 @@
           // Voice explanation stream finished; flush speech buffer so all sentences play cleanly
           sentenceBuffer?.flush();
           if (!isSpeaking) {
-            updateHUDStatus(chatterboxEnabled ? '🎙️ Synthesizing voice with Chatterbox…' : '🔊 Speaking explanation…');
+            const providerTitle = activeAudioProvider === 'gnani' ? 'Gnani' : 'Chatterbox';
+            updateHUDStatus(chatterboxEnabled ? `🎙️ Synthesizing voice with ${providerTitle}…` : '🔊 Speaking explanation…');
           }
           if (data.explanation && !isContinueResume) {
             currentSpeechText = data.explanation;
@@ -2311,7 +2316,8 @@
             const rawIdx = Number(data.sentenceIndex ?? 1);
             const mappedIdx = isFollowUp ? -1 : (isContinueResume ? currentSessionResumeOffset + rawIdx : Math.max(0, rawIdx - 1));
             queueSpeechSentence(data.sentence, data.sentenceIndex, data.requestId, mappedIdx);
-            updateHUDStatus('Local Chatterbox audio failed; using browser speech fallback.');
+            const providerTitle = activeAudioProvider === 'gnani' ? 'Gnani' : 'Chatterbox';
+            updateHUDStatus(`${providerTitle} audio failed; using browser speech fallback.`);
           }
         } else if (event === 'done') {
           timingMetrics.t7 = performance.now();
@@ -2354,7 +2360,8 @@
           if (!chatterboxEnabled && !isSpeaking) {
             updateHUDStatus('Explanation complete.');
           } else if (chatterboxEnabled && !isSpeaking) {
-            updateHUDStatus('🎙️ Synthesizing voice with Chatterbox…');
+            const providerTitle = activeAudioProvider === 'gnani' ? 'Gnani' : 'Chatterbox';
+            updateHUDStatus(`🎙️ Synthesizing voice with ${providerTitle}…`);
           }
         } else if (event === 'error') {
           const isOverload = data.statusCode === 503 || data.statusCode === 429;
@@ -2370,6 +2377,8 @@
       } else if (msg.action === 'AUDIO_PLAYBACK') {
         const data = msg.data || {};
         if (msg.requestId !== activeRequestId) return;
+        const currentProvider = data.provider || activeAudioProvider;
+        const providerLabel = currentProvider === 'gnani' ? 'Gnani voice' : 'local Chatterbox';
         if (msg.event === 'started') {
           if (currentSessionIsFollowUp) {
             followUpAudioStarted = true;
@@ -2379,7 +2388,7 @@
           }
           if (timingMetrics.t6 === 0) {
             timingMetrics.t6 = performance.now();
-            console.log(`[DocVex Timing] Chatterbox Playback Started (T0->T6): ${Math.round(timingMetrics.t6 - timingMetrics.t0)}ms`);
+            console.log(`[DocVex Timing] ${providerLabel} Playback Started (T0->T6): ${Math.round(timingMetrics.t6 - timingMetrics.t0)}ms`);
           }
           isSpeaking = true;
           isChatterboxPlaying = true;
@@ -2396,8 +2405,8 @@
           updatePlayButtonState();
           updateHUDStatus(
             currentSessionIsFollowUp
-              ? '🗣️ Answering with Chatterbox…'
-              : `🔊 Speaking with local Chatterbox… (sentence ${data.sentenceIndex || 1})`
+              ? `🗣️ Answering with ${providerLabel}…`
+              : `🔊 Speaking with ${providerLabel}… (sentence ${data.sentenceIndex || 1})`
           );
           docyInterrupt.setCurrentSpeakingText(data.sentence || data.speechText || '');
           if (!docyInterrupt.userDisabled) {
@@ -2413,7 +2422,7 @@
           }
 
           if (data.hasMore) {
-            updateHUDStatus(currentSessionIsFollowUp ? '🗣️ Answering with Chatterbox…' : '🔊 Speaking with local Chatterbox…');
+            updateHUDStatus(currentSessionIsFollowUp ? `🗣️ Answering with ${providerLabel}…` : `🔊 Speaking with ${providerLabel}…`);
           } else {
             onAudioQueueDrained();
           }
@@ -2422,12 +2431,17 @@
           const rawIdx = Number(data.sentenceIndex ?? 1);
           const mappedIdx = isFollowUp ? -1 : (isContinueResume ? currentSessionResumeOffset + rawIdx : Math.max(0, rawIdx - 1));
           queueSpeechSentence(data.sentence, data.sentenceIndex, msg.requestId, mappedIdx);
-          updateHUDStatus('Local Chatterbox audio failed; using browser speech fallback.');
+          updateHUDStatus(`${providerLabel} audio failed; using browser speech fallback.`);
         }
       } else if (msg.action === 'AUDIO_ERROR') {
         const data = msg.data || {};
         if (data.sentence && msg.requestId === activeRequestId) {
           const rawIdx = Number(data.sentenceIndex ?? 1);
+          const mappedIdx = isFollowUp ? -1 : (isContinueResume ? currentSessionResumeOffset + rawIdx : Math.max(0, rawIdx - 1));
+          queueSpeechSentence(data.sentence, data.sentenceIndex, msg.requestId, mappedIdx);
+          const providerLabel = activeAudioProvider === 'gnani' ? 'Gnani voice' : 'local Chatterbox';
+          updateHUDStatus(`${providerLabel} audio failed; using browser speech fallback.`);
+        }
           const mappedIdx = isFollowUp ? -1 : (isContinueResume ? currentSessionResumeOffset + rawIdx : Math.max(0, rawIdx - 1));
           queueSpeechSentence(data.sentence, data.sentenceIndex, msg.requestId, mappedIdx);
           updateHUDStatus('Local Chatterbox audio failed; using browser speech fallback.');

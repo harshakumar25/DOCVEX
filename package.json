@@ -8,6 +8,8 @@
     "start": "node server/server.js",
     "test": "node --test server/test/*.test.js",
     "lint": "node --check server/**/*.js extension/*.js",
+    "certify": "node server/prismaguard/cli.js --all",
+    "chaosflight": "node server/prismaguard/cli.js",
     "legal": "node --disable-warning=ExperimentalWarning node_modules/@docvex/lawbuddy/src/cli.js"
   },
   "dependencies": {
