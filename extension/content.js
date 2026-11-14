@@ -1988,20 +1988,19 @@
   function resumeSpeech() {
     let resumed = false;
     const wasPaused = isPaused;
-    const providerLabel = activeAudioProvider === 'gnani' ? 'Gnani voice' : 'local Chatterbox';
     if (chatterboxEnabled && activePort && wasPaused) {
       try {
         activePort.postMessage({ action: 'RESUME_AUDIO' });
       } catch { /* ignore */ }
       isPaused = false;
       updatePlayButtonState();
-      updateHUDStatus(`🔊 Speaking with ${providerLabel}… (Docy listening)`);
+      updateHUDStatus('🔊 Speaking with local Chatterbox… (Docy listening)');
       resumed = true;
     } else if (activeAudio && wasPaused) {
       activeAudio.play().catch(() => {});
       isPaused = false;
       updatePlayButtonState();
-      updateHUDStatus(`🔊 Speaking with ${providerLabel}… (Docy listening)`);
+      updateHUDStatus('🔊 Speaking with local Chatterbox… (Docy listening)');
       resumed = true;
     } else if (window.speechSynthesis && window.speechSynthesis.paused) {
       window.speechSynthesis.resume();

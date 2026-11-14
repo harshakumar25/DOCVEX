@@ -4,7 +4,7 @@ import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
-import { getAudioProvider, getChatterboxProvider, teachPipeline, streamTeachPipeline } from './pipeline.js';
+import { getChatterboxProvider, teachPipeline, streamTeachPipeline } from './pipeline.js';
 import { transcribeAudioWithGroq } from './providers/groqProvider.js';
 import { DEFAULT_TRUSTED_DOMAINS } from './retrieval/trustedSources.js';
 import { listPlugins, executePlugin, setPluginEnabled } from './plugins/pluginManager.js';

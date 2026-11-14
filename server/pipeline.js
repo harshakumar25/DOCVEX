@@ -1,6 +1,5 @@
 
 
-import { buildTeachingPrompt, buildFollowUpPrompt, shapeSpeechText, TEACHER_SYSTEM_PROMPT, DOCY_FOLLOWUP_SYSTEM_PROMPT } from './prompt/teacherPrompt.js';
 import { buildReasoningPrompt, OLLAMA_REASONING_SYSTEM_PROMPT } from './prompt/reasoningPrompt.js';
 import { generateExplanation, streamExplanation } from './providers/providerFactory.js';
 import { ChatterboxProvider } from './providers/chatterboxProvider.js';
@@ -406,10 +405,10 @@ export const streamTeachPipeline = async (
     });
   }
 
-  const queueAudioSentence = (sentence, sentenceIndex, pauseAfterMs = 0) => {
-    if (!audioProvider || !isMeaningfulTeachingSentence(sentence)) return;
+  const queueChatterboxSentence = (sentence, sentenceIndex, pauseAfterMs = 0) => {
+    if (!chatterbox || !isMeaningfulTeachingSentence(sentence)) return;
     const speechText = normalizeSpeechText(sentence);
-    const audioPromise = audioProvider
+    const audioPromise = chatterbox
       .synthesize(speechText, { requestId: `${requestId}-sentence-${sentenceIndex}`, signal })
       .then((audio) => {
         if (typeof onAudioReady === 'function') {
@@ -424,13 +423,12 @@ export const streamTeachPipeline = async (
             durationSeconds: audio.durationSeconds,
             generatedAudioAvailableSeconds: audio.generatedAudioAvailableSeconds,
             model: audio.model,
-            provider: audio.provider || audioProvider.providerName || 'neural',
           });
         }
         return audio;
       })
       .catch((error) => {
-        if (signal?.aborted || error.code === 'CHATTERBOX_CANCELLED' || error.code === 'GNANI_CANCELLED' || error.name === 'AbortError') {
+        if (signal?.aborted || error.code === 'CHATTERBOX_CANCELLED' || error.name === 'AbortError') {
           return null;
         }
         // One log line per error kind per request, not one stack trace per sentence.
@@ -451,13 +449,12 @@ export const streamTeachPipeline = async (
       });
     audioPromises.push(audioPromise);
   };
-  const queueChatterboxSentence = queueAudioSentence;
 
-  const sentenceBuffer = audioProvider
+  const sentenceBuffer = chatterbox
     ? new SentenceBuffer({
         minSentenceLength: 4,
         onSentence: (sentence, sentenceIndex, pauseAfterMs = 0) => {
-          queueAudioSentence(sentence, sentenceIndex, pauseAfterMs);
+          queueChatterboxSentence(sentence, sentenceIndex, pauseAfterMs);
         },
       })
     : null;
