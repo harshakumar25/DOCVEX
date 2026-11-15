@@ -138,6 +138,9 @@ const playNext = async () => {
       requestId: current.requestId,
       sentence: current.sentence,
       sentenceIndex: current.sentenceIndex,
+      speechText: current.speechText,
+      model: current.model,
+      provider: current.provider,
       hasMore: queue.length > 0,
     });
 
@@ -167,6 +170,9 @@ const playNext = async () => {
       requestId: current.requestId,
       sentence: current.sentence,
       sentenceIndex: current.sentenceIndex,
+      speechText: current.speechText,
+      model: current.model,
+      provider: current.provider,
       hasMore: queue.length > 0,
     });
   };

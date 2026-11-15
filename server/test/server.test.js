@@ -10,7 +10,11 @@ const startTestServer = async (options = {}) => {
   await new Promise((resolve) => server.listen(0, resolve));
   const port = server.address().port;
   const baseUrl = `http://127.0.0.1:${port}`;
-  const close = () => new Promise((resolve) => server.close(resolve));
+  const close = () => new Promise((resolve) => {
+    server.closeIdleConnections?.();
+    server.closeAllConnections?.();
+    server.close(resolve);
+  });
   return { baseUrl, close };
 };
 
@@ -44,6 +48,22 @@ test('GET /health returns 200 without wildcard CORS header for direct/extension 
   }
 });
 
+test('GET /audio refuses to serve Chatterbox files without an exact extension origin', async () => {
+  const { baseUrl, close } = await startTestServer({
+    CHATTERBOX_ENABLED: true,
+    EXTENSION_ORIGIN: '',
+    chatterboxProvider: {},
+  });
+  try {
+    const response = await fetch(`${baseUrl}/audio/sentence.wav`, {
+      headers: { Origin: 'chrome-extension://any-extension' },
+    });
+    assert.equal(response.status, 503);
+  } finally {
+    await close();
+  }
+});
+
 test('GET /audio serves only provider-owned WAV files to the configured extension origin', async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'docvex-audio-test-'));
   const fileName = 'sentence.wav';
@@ -65,21 +85,6 @@ test('GET /audio serves only provider-owned WAV files to the configured extensio
     chatterboxProvider: fakeProvider,
   });
 
-  test('GET /audio refuses to serve Chatterbox files without an exact extension origin', async () => {
-    const { baseUrl, close } = await startTestServer({
-      CHATTERBOX_ENABLED: true,
-      EXTENSION_ORIGIN: '',
-      chatterboxProvider: {},
-    });
-    try {
-      const response = await fetch(`${baseUrl}/audio/sentence.wav`, {
-        headers: { Origin: 'chrome-extension://any-extension' },
-      });
-      assert.equal(response.status, 503);
-    } finally {
-      await close();
-    }
-  });
   try {
     const allowed = await fetch(`${baseUrl}/audio/${fileName}`, {
       headers: { Origin: 'chrome-extension://docvex-test' },
@@ -91,6 +96,7 @@ test('GET /audio serves only provider-owned WAV files to the configured extensio
       headers: { Origin: 'chrome-extension://other-extension' },
     });
     assert.equal(blocked.status, 403);
+    await blocked.json();
 
     const extensionWorkerFetch = await fetch(`${baseUrl}/audio/${fileName}`, {
       headers: {
@@ -98,6 +104,7 @@ test('GET /audio serves only provider-owned WAV files to the configured extensio
       },
     });
     assert.equal(extensionWorkerFetch.status, 200);
+    assert.equal(await extensionWorkerFetch.arrayBuffer().then((bytes) => Buffer.from(bytes).toString()), 'RIFF');
   } finally {
     await close();
     await rm(tempDir, { recursive: true, force: true });

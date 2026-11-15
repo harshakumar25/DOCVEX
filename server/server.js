@@ -8,6 +8,7 @@ import { getChatterboxProvider, teachPipeline, streamTeachPipeline } from './pip
 import { transcribeAudioWithGroq } from './providers/groqProvider.js';
 import { DEFAULT_TRUSTED_DOMAINS } from './retrieval/trustedSources.js';
 import { listPlugins, executePlugin, setPluginEnabled } from './plugins/pluginManager.js';
+import { ChaosFlight, runChaosFlightSimulation } from './prismaguard/index.js';
 import {
   config as legalConfig,
   LAW_SYSTEM_PROMPT,
@@ -279,6 +280,7 @@ export const createServer = (options = {}) => {
     if (req.method === 'GET' && pathname === '/health') {
       const ollama = await checkOllamaStatus(serverConfig.OLLAMA_HOST, serverConfig.OLLAMA_MODEL);
       const chatterbox = getChatterboxProvider(serverConfig);
+      const audioProvider = getAudioProvider(serverConfig);
       return sendJson(res, 200, {
         status: 'ok',
         service: 'DocVex Local Tutor',
@@ -292,13 +294,21 @@ export const createServer = (options = {}) => {
           model: serverConfig.CHATTERBOX_MODEL,
           ready: Boolean(chatterbox?.isReady?.()),
         },
+        gnani: {
+          enabled: Boolean(serverConfig.GNANI_API_KEY),
+          model: serverConfig.GNANI_MODEL || 'timbre-v2.5',
+          voice: serverConfig.GNANI_VOICE || 'Deepak',
+          ready: Boolean(serverConfig.GNANI_API_KEY),
+        },
+        audioProvider: audioProvider?.providerName || (serverConfig.CHATTERBOX_ENABLED ? 'chatterbox' : (serverConfig.GNANI_API_KEY ? 'gnani' : 'none')),
         defaultProvider: serverConfig.DEFAULT_PROVIDER,
       }, req);
     }
 
     if (req.method === 'GET' && pathname.startsWith('/audio/')) {
-      if (!serverConfig.CHATTERBOX_ENABLED) {
-        return sendJson(res, 404, { error: 'Local Chatterbox audio is disabled.' }, req);
+      const provider = getAudioProvider(serverConfig);
+      if (!provider) {
+        return sendJson(res, 404, { error: 'Audio provider is disabled.' }, req);
       }
       const origin = req.headers.origin || req.headers['x-docvex-extension-origin'] || '';
       const allowedOrigins = (serverConfig.EXTENSION_ORIGIN || '')
@@ -321,7 +331,6 @@ export const createServer = (options = {}) => {
 
       try {
         const fileName = decodeURIComponent(pathname.slice('/audio/'.length));
-        const provider = getChatterboxProvider(serverConfig);
         const filePath = provider.safeAudioPath(fileName);
         const audioStream = createReadStream(filePath);
         audioStream.once('error', () => {
@@ -350,6 +359,7 @@ export const createServer = (options = {}) => {
     if (req.method === 'GET' && pathname === '/api/system/stats') {
       const ollama = await checkOllamaStatus(serverConfig.OLLAMA_HOST, serverConfig.OLLAMA_MODEL);
       const chatterbox = getChatterboxProvider(serverConfig);
+      const audioProvider = getAudioProvider(serverConfig);
       return sendJson(res, 200, {
         status: 'ok',
         service: 'DocVex Local Tutor',
@@ -378,6 +388,13 @@ export const createServer = (options = {}) => {
             sampleRate: serverConfig.CHATTERBOX_TARGET_SR,
             cfmSteps: serverConfig.CHATTERBOX_CFM_STEPS,
           },
+          gnani: {
+            enabled: Boolean(serverConfig.GNANI_API_KEY),
+            model: serverConfig.GNANI_MODEL || 'timbre-v2.5',
+            voice: serverConfig.GNANI_VOICE || 'Deepak',
+            ready: Boolean(serverConfig.GNANI_API_KEY),
+          },
+          audioProvider: audioProvider?.providerName || (serverConfig.CHATTERBOX_ENABLED ? 'chatterbox' : (serverConfig.GNANI_API_KEY ? 'gnani' : 'none')),
         },
       }, req);
     }
@@ -501,6 +518,32 @@ export const createServer = (options = {}) => {
         return sendJson(res, 404, { error: `Plugin "${pluginId}" not found.` }, req);
       }
       return sendJson(res, 200, { success: true, plugin: updated }, req);
+    }
+
+    // ChaosFlight Scenarios Library Endpoint
+    if (req.method === 'GET' && pathname === '/api/chaosflight/scenarios') {
+      return sendJson(res, 200, {
+        success: true,
+        scenarios: ChaosFlight.PREBUILT_SCENARIOS,
+        count: ChaosFlight.PREBUILT_SCENARIOS.length,
+      }, req);
+    }
+
+    // ChaosFlight Simulation Runner Endpoint
+    if (req.method === 'POST' && pathname === '/api/chaosflight/simulate') {
+      let body;
+      try {
+        body = await parseJsonBody(req);
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message }, req);
+      }
+
+      try {
+        const simulationResult = await runChaosFlightSimulation(body || {});
+        return sendJson(res, 200, simulationResult, req);
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message }, req);
+      }
     }
 
     if (serveStaticTextAsset(req, res, pathname)) {

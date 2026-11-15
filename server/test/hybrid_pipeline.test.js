@@ -300,6 +300,69 @@ test('streamTeachPipeline sends meaningful sentences through the optional Chatte
   assert.ok(audioEvents.every((event) => !event.error));
 });
 
+test('streamTeachPipeline routes sentences through GnaniProvider when GNANI_API_KEY is configured', async () => {
+  const audioEvents = [];
+  let capturedMetadata = null;
+  const fakeGnani = {
+    providerName: 'gnani',
+    model: 'gnani:timbre-v2.5:Deepak',
+    start: async () => {},
+    synthesize: async (speechText, { requestId }) => ({
+      fileName: `${requestId}.wav`,
+      filePath: `/tmp/${requestId}.wav`,
+      sampleRate: 24000,
+      durationSeconds: 1.4,
+      generatedAudioAvailableSeconds: 1.4,
+      model: 'gnani:timbre-v2.5:Deepak',
+      provider: 'gnani',
+      speechText,
+    }),
+  };
+
+  const mockFetch = async (url) => {
+    if (String(url).includes('groq.com')) {
+      const chunks = [
+        'data: {"choices":[{"delta":{"content":"Gnani provides sub-second neural voiceover in Indian English. "}}]}\n\n',
+        'data: [DONE]\n\n',
+      ];
+      let index = 0;
+      const stream = new ReadableStream({
+        pull(controller) {
+          if (index < chunks.length) controller.enqueue(new TextEncoder().encode(chunks[index++]));
+          else controller.close();
+        },
+      });
+      return { ok: true, status: 200, body: stream };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+
+  await streamTeachPipeline(
+    { text: 'Fast cloud voiceover', provider: 'hybrid', requestId: 'gnani-test' },
+    {
+      options: {
+        GROQ_API_KEY: 'test-key',
+        fetchFn: mockFetch,
+        retrieveVerifiedReferences: async () => [],
+        gnaniProvider: fakeGnani,
+        AUDIO_PROVIDER: 'gnani',
+      },
+      onMetadata: (data) => { capturedMetadata = data; },
+      onToken: () => {},
+      onAudioReady: (data) => audioEvents.push(data),
+      onAudioError: (data) => audioEvents.push({ error: data.error }),
+    }
+  );
+
+  assert.ok(capturedMetadata);
+  assert.equal(capturedMetadata.chatterbox?.enabled, true);
+  assert.equal(capturedMetadata.chatterbox?.provider, 'gnani');
+  assert.equal(audioEvents.length, 1);
+  assert.equal(audioEvents[0].provider, 'gnani');
+  assert.equal(audioEvents[0].model, 'gnani:timbre-v2.5:Deepak');
+  assert.match(audioEvents[0].speechText, /Gnani/);
+});
+
 test('buildReasoningPrompt caps input text and evidence to prevent Ollama CoT hang on large text', () => {
   const hugeText = 'A'.repeat(5000);
   const prompt = buildReasoningPrompt({

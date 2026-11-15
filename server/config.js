@@ -39,6 +39,12 @@ const parseProvider = (value, fallback = 'ollama') => {
   return fallback;
 };
 
+const parseAudioProvider = (value, fallback = 'auto') => {
+  const normalized = (value || '').toLowerCase().trim();
+  if (['gnani', 'chatterbox', 'auto', 'none'].includes(normalized)) return normalized;
+  return fallback;
+};
+
 const parseBoolean = (value, fallback = false) => {
   if (typeof value !== 'string') return fallback;
   const normalized = value.trim().toLowerCase();
@@ -79,6 +85,15 @@ export const config = Object.freeze({
   CHATTERBOX_STARTUP_TIMEOUT_MS: parsePositiveInteger(process.env.CHATTERBOX_STARTUP_TIMEOUT_MS, 120000),
   CHATTERBOX_REQUEST_TIMEOUT_MS: parsePositiveInteger(process.env.CHATTERBOX_REQUEST_TIMEOUT_MS, 120000),
   CHATTERBOX_MAX_QUEUE: parsePositiveInteger(process.env.CHATTERBOX_MAX_QUEUE, 30),
+  GNANI_API_KEY: (process.env.GNANI_API_KEY || '').trim(),
+  GNANI_BASE_URL: (process.env.GNANI_BASE_URL || 'https://api.vachana.ai').replace(/\/+$/, ''),
+  GNANI_MODEL: (process.env.GNANI_MODEL || 'timbre-v2.5').trim(),
+  GNANI_VOICE: (process.env.GNANI_VOICE || 'Deepak').trim(),
+  GNANI_LANGUAGE: (process.env.GNANI_LANGUAGE || 'en-IN').trim(),
+  GNANI_SPEED: parseFiniteFloat(process.env.GNANI_SPEED, 1.0, { min: 0.5, max: 2.0 }),
+  GNANI_TARGET_SR: parsePositiveInteger(process.env.GNANI_TARGET_SR, 24000),
+  GNANI_TIMEOUT_MS: parsePositiveInteger(process.env.GNANI_TIMEOUT_MS, 15000),
+  AUDIO_PROVIDER: parseAudioProvider(process.env.AUDIO_PROVIDER, 'auto'),
   LEGAL_DB_PATH: process.env.LEGAL_DB_PATH || path.resolve(process.cwd(), '.lawbuddy/lawbuddy.db'),
   LEGAL_RAW_DIR: process.env.LEGAL_RAW_DIR || path.resolve(process.cwd(), '.lawbuddy/raw'),
   LEGAL_USER_AGENT: (process.env.LEGAL_USER_AGENT || 'LawBuddyBot/0.1 (+educational legal research)').trim(),
@@ -95,5 +110,6 @@ export const helpers = {
   parsePositiveInteger,
   parseFiniteFloat,
   parseProvider,
+  parseAudioProvider,
   parseBoolean,
 };

@@ -9,10 +9,13 @@ const GROQ_RETRYABLE_STATUSES = new Set([429, 503]);
  * Exponential backoff helper. Waits baseMs * 2^attempt ms before resolving.
  * Respects AbortSignal so retries stop immediately on request cancellation.
  */
+const isTestEnv = () => Boolean(process.env.NODE_TEST_CONTEXT || process.env.NODE_ENV === 'test' || (process.execArgv && process.execArgv.includes('--test')));
+const getBackoffMs = (baseMs) => (isTestEnv() ? 2 : baseMs);
+
 const backoff = (attempt, baseMs = 1000, signal) =>
   new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(Object.assign(new Error('Aborted'), { name: 'AbortError' }));
-    const delay = baseMs * Math.pow(2, attempt);
+    const delay = getBackoffMs(baseMs) * Math.pow(2, attempt);
     const id = setTimeout(resolve, delay);
     signal?.addEventListener('abort', () => { clearTimeout(id); reject(Object.assign(new Error('Aborted'), { name: 'AbortError' })); }, { once: true });
   });

@@ -1,0 +1,45 @@
+{
+  "version": "2026.1",
+  "description": "Gold-standard Hinglish stop-signal, refusal, wrong number, and statutory escalation lexicon for TRAI Regulation 21A and RBI Fair Practices testing.",
+  "categories": {
+    "DND_OPT_OUT": [
+      { "phrase": "dnd pe daalo", "canonical_intent": "OPT_OUT", "severity": "HIGH", "regex": "\\bdnd\\b.*\\b(daal|karo|register)\\b" },
+      { "phrase": "mera number list se hatao", "canonical_intent": "OPT_OUT", "severity": "HIGH", "regex": "\\b(number|naam)\\b.*\\b(hatao|delete|remove)\\b" },
+      { "phrase": "dobara call mat karna", "canonical_intent": "OPT_OUT", "severity": "HIGH", "regex": "\\b(dobara|phir se|again)\\b.*\\b(call|phone)\\b.*\\bmat\\b" },
+      { "phrase": "do not call me again", "canonical_intent": "OPT_OUT", "severity": "HIGH", "regex": "\\bdo not call\\b" },
+      { "phrase": "stop calling me", "canonical_intent": "OPT_OUT", "severity": "HIGH", "regex": "\\bstop call(ing)?\\b" },
+      { "phrase": "mujhe koi phone nahi chahiye", "canonical_intent": "OPT_OUT", "severity": "MEDIUM", "regex": "\\b(koi phone|call)\\b.*\\bnahi chahiye\\b" },
+      { "phrase": "blacklist me daal do", "canonical_intent": "OPT_OUT", "severity": "HIGH", "regex": "\\bblacklist\\b" }
+    ],
+    "COMPLAINT_THREAT": [
+      { "phrase": "main police complaint karunga", "canonical_intent": "COMPLAINT_ESCALATION", "severity": "CRITICAL", "regex": "\\bpolice\\b.*\\bcomplaint\\b" },
+      { "phrase": "1909 pe complaint dalunga", "canonical_intent": "COMPLAINT_ESCALATION", "severity": "CRITICAL", "regex": "\\b(1909|trai)\\b.*\\bcomplaint\\b" },
+      { "phrase": "consumer court me dekh lenge", "canonical_intent": "COMPLAINT_ESCALATION", "severity": "CRITICAL", "regex": "\\b(consumer court|court)\\b" },
+      { "phrase": "harassment ka case karunga", "canonical_intent": "COMPLAINT_ESCALATION", "severity": "CRITICAL", "regex": "\\b(harass|harassment|case karunga)\\b" },
+      { "phrase": "fir darj karwa raha hoon", "canonical_intent": "COMPLAINT_ESCALATION", "severity": "CRITICAL", "regex": "\\bfir\\b" },
+      { "phrase": "rbi ombudsman ko likhunga", "canonical_intent": "COMPLAINT_ESCALATION", "severity": "CRITICAL", "regex": "\\b(rbi|ombudsman)\\b" }
+    ],
+    "WRONG_NUMBER": [
+      { "phrase": "galat number hai", "canonical_intent": "WRONG_PARTY", "severity": "CRITICAL", "regex": "\\b(galat|wrong)\\b.*\\b(number|aadmi)\\b" },
+      { "phrase": "wrong number lag gaya", "canonical_intent": "WRONG_PARTY", "severity": "CRITICAL", "regex": "\\bwrong number\\b" },
+      { "phrase": "main woh aadmi nahi hoon", "canonical_intent": "WRONG_PARTY", "severity": "CRITICAL", "regex": "\\bmain (woh|yeh|vo)\\b.*\\bnahi hoon\\b" },
+      { "phrase": "yahan koi ramesh nahi rehta", "canonical_intent": "WRONG_PARTY", "severity": "CRITICAL", "regex": "\\byahan koi\\b.*\\bnahi rehta\\b" },
+      { "phrase": "aap kisi aur ko call kar rahe ho", "canonical_intent": "WRONG_PARTY", "severity": "CRITICAL", "regex": "\\bkisi aur ko\\b.*\\bcall\\b" },
+      { "phrase": "sim naya liya hai maine", "canonical_intent": "WRONG_PARTY", "severity": "CRITICAL", "regex": "\\b(naya sim|sim naya)\\b" }
+    ],
+    "DISPUTE_OR_DISTRESS": [
+      { "phrase": "hospital me hoon call mat karo", "canonical_intent": "DISTRESS_POSTPONE", "severity": "HIGH", "regex": "\\b(hospital|icu|doctor|tabiyat)\\b" },
+      { "phrase": "emergency chal rahi hai", "canonical_intent": "DISTRESS_POSTPONE", "severity": "HIGH", "regex": "\\bemergency\\b" },
+      { "phrase": "paise nahi hai abhi", "canonical_intent": "FINANCIAL_DISTRESS", "severity": "MEDIUM", "regex": "\\bpaise? nahi hai\\b" },
+      { "phrase": "pareshan mat karo", "canonical_intent": "REFUSAL", "severity": "HIGH", "regex": "\\b(pareshan|tang)\\b.*\\bmat karo\\b" },
+      { "phrase": "mental stress mat do", "canonical_intent": "REFUSAL", "severity": "HIGH", "regex": "\\b(stress|depression)\\b" }
+    ],
+    "DEMAND_HUMAN_AGENT": [
+      { "phrase": "kisi insaan se baat karwao", "canonical_intent": "ESCALATE_HUMAN", "severity": "HIGH", "regex": "\\b(insaan|human|person)\\b.*\\bbaat\\b" },
+      { "phrase": "human agent se connect karo", "canonical_intent": "ESCALATE_HUMAN", "severity": "HIGH", "regex": "\\bhuman agent\\b" },
+      { "phrase": "apne manager ko phone do", "canonical_intent": "ESCALATE_HUMAN", "severity": "HIGH", "regex": "\\b(manager|supervisor|senior)\\b" },
+      { "phrase": "bot se baat nahi karni", "canonical_intent": "ESCALATE_HUMAN", "severity": "HIGH", "regex": "\\b(bot|robot|computer)\\b.*\\bnahi\\b" }
+    ]
+  }
+}
+
